@@ -1,0 +1,168 @@
+import { useEffect, useRef, useState } from "react";
+import { HeuristicAgent, HumanAgent, dispatchAction, type PlayerAgent } from "../agents";
+import {
+  createInitialState,
+  getActorIndex,
+  getLegalActions,
+  type Difficulty,
+  type GameState,
+  type PlayerCount,
+} from "../engine";
+import { ActionPanel } from "./ActionPanel";
+import { Board } from "./Board";
+import { EndScreen } from "./EndScreen";
+import { PlayerBoard } from "./PlayerBoard";
+import { phasePrompt } from "./labels";
+import "./GameScreen.css";
+
+export function GameScreen({
+  playerCount,
+  difficulty,
+  onExit,
+}: {
+  playerCount: PlayerCount;
+  difficulty: Difficulty;
+  onExit: () => void;
+}) {
+  const humanRef = useRef(new HumanAgent());
+  const startRef = useRef<GameState | null>(null);
+  if (!startRef.current) {
+    startRef.current = createInitialState({ playerCount, difficulty });
+  }
+  const [state, setState] = useState<GameState>(startRef.current);
+  const [busy, setBusy] = useState(false);
+  const [awaitingHuman, setAwaitingHuman] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const human = humanRef.current;
+    let cancelled = false;
+    const initial = startRef.current!;
+    const agents: Record<string, PlayerAgent> = {};
+    for (const p of initial.players) {
+      agents[p.id] = p.isHuman ? human : new HeuristicAgent();
+    }
+
+    async function loop(start: GameState) {
+      let current = start;
+      while (!cancelled && !current.gameOver) {
+        const idx = getActorIndex(current);
+        if (idx === null) break;
+        const player = current.players[idx]!;
+        const legal = getLegalActions(current);
+        if (legal.length === 0) break;
+        const agent = agents[player.id];
+        if (!agent) break;
+        if (player.isHuman) {
+          setBusy(false);
+          setAwaitingHuman(true);
+          setState(current);
+        } else {
+          setBusy(true);
+          setAwaitingHuman(false);
+        }
+        const action = await agent.chooseAction({
+          state: current,
+          legalActions: legal,
+          playerId: player.id,
+        });
+        setAwaitingHuman(false);
+        if (cancelled) return;
+        current = await dispatchAction(current, action, player.id);
+        setState(current);
+        if (!player.isHuman) {
+          await delay(240);
+        }
+      }
+      setBusy(false);
+      setAwaitingHuman(false);
+    }
+
+    void loop(initial).catch((err: Error) => {
+      if (!cancelled && err.message !== "cancelled") {
+        setError(err.message);
+        setBusy(false);
+        setAwaitingHuman(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      human.cancel();
+    };
+  }, [playerCount, difficulty]);
+
+  function onAct(action: Parameters<typeof dispatchAction>[1]) {
+    try {
+      humanRef.current.submit(action);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "行動失敗");
+    }
+  }
+
+  if (state.gameOver && state.scores) {
+    return <EndScreen scores={state.scores} reason={state.endReason} onAgain={onExit} />;
+  }
+
+  const legal = getLegalActions(state);
+  const humanTurn = awaitingHuman && !busy;
+  const you = state.players[0]!;
+  const others = state.players.slice(1);
+
+  return (
+    <div className="table">
+      <header className="table-top">
+        <p className="brand-mini">Puerto Rico</p>
+        <p>
+          第 {state.round} 輪 · 總督 {state.players[state.governorIndex]?.name}
+          {state.endTriggered ? " · 終局已觸發" : ""}
+        </p>
+        <button type="button" className="text-btn" onClick={onExit}>
+          離開
+        </button>
+      </header>
+
+      <Board state={state} legal={humanTurn ? legal : []} onAct={onAct} humanTurn={humanTurn} />
+
+      <div className="table-body">
+        <PlayerBoard
+          player={you}
+          self
+          legal={humanTurn ? legal : []}
+          onAct={onAct}
+          humanTurn={humanTurn}
+          hideVp={false}
+        />
+        <div className="side">
+          <ActionPanel
+            legal={humanTurn ? legal : []}
+            onAct={onAct}
+            busy={busy}
+            prompt={phasePrompt(state.phase.type)}
+          />
+          {others.map((p) => (
+            <PlayerBoard
+              key={p.id}
+              player={p}
+              self={false}
+              legal={[]}
+              onAct={onAct}
+              humanTurn={false}
+              hideVp
+            />
+          ))}
+          <ol className="log">
+            {state.log.slice(-8).map((e) => (
+              <li key={e.id}>{e.text}</li>
+            ))}
+          </ol>
+          {error && <p className="error">{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

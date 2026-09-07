@@ -1,0 +1,124 @@
+.setup {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  color: var(--sand-light);
+}
+
+.setup-sky {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 70% 18%, #f3d27a 0 7%, transparent 8%),
+    linear-gradient(180deg, #163c5a 0%, #1c6c78 42%, #2f8f88 62%, #e8c97a 78%, #c45c26 100%);
+  animation: sky-shift 18s ease-in-out infinite alternate;
+}
+
+.setup-island {
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  bottom: -8%;
+  height: 46%;
+  background:
+    radial-gradient(120% 80% at 50% 100%, #1c4626 0%, #2c6a38 36%, transparent 37%),
+    radial-gradient(40% 50% at 22% 70%, #1c4626 0 40%, transparent 41%),
+    radial-gradient(50% 60% at 78% 74%, #245830 0 42%, transparent 43%);
+  animation: swell 9s ease-in-out infinite;
+}
+
+.setup-main {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8vh 8vw 18vh;
+  max-width: 52rem;
+}
+
+.brand {
+  margin: 0;
+  font-family: "Fraunces", serif;
+  font-size: clamp(3.4rem, 9vw, 6.4rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+  color: #f6e3b0;
+  text-shadow: 0 12px 40px rgba(11, 47, 54, 0.45);
+}
+
+.setup-main h1 {
+  margin: 1.1rem 0 0;
+  font-size: clamp(1.05rem, 2.4vw, 1.45rem);
+  font-weight: 500;
+  max-width: 22em;
+  color: var(--foam);
+}
+
+.setup-cta {
+  margin-top: 2.2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem 2rem;
+  align-items: end;
+}
+
+.setup-cta fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.setup-cta legend {
+  padding: 0;
+  margin-bottom: 0.4rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sand);
+}
+
+.setup-cta label {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  font-weight: 700;
+}
+
+.start-btn {
+  border: 0;
+  background: var(--clay);
+  color: #fff8e8;
+  font-size: 1.15rem;
+  font-weight: 800;
+  padding: 0.85rem 1.8rem;
+  box-shadow: 0 10px 0 var(--clay-dark);
+  transform: translateY(0);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.start-btn:hover {
+  transform: translateY(2px);
+  box-shadow: 0 8px 0 var(--clay-dark);
+}
+
+@keyframes swell {
+  from { transform: translateY(0); }
+  to { transform: translateY(-10px); }
+}
+
+@keyframes sky-shift {
+  from { filter: saturate(1); }
+  to { filter: saturate(1.15) brightness(1.05); }
+}
+
+@media (max-width: 700px) {
+  .setup-main {
+    padding: 12vh 7vw 22vh;
+  }
+}
