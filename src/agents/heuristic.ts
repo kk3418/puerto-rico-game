@@ -27,7 +27,8 @@ export class HeuristicAgent implements PlayerAgent {
     let rng = state.rng;
     const roll = nextUnit(rng);
     const aggressive = state.difficulty === "aggressive";
-    const randomize = !aggressive && roll.value < 0.12 && scored.length > 1;
+    const randomize =
+      !aggressive && roll.value < 0.12 && scored.length > 1 && scored[1]!.action.type !== "mayorRemove";
     return randomize ? scored[1]!.action : scored[0]!.action;
   }
 }
@@ -51,6 +52,9 @@ function scoreAction(state: GameState, action: Action, playerIndex: number): num
   }
   if (action.type === "mayorPlace") {
     bonus += scoreMayorPlace(state.players[playerIndex]!, action);
+  }
+  if (action.type === "mayorRemove") {
+    bonus -= 25;
   }
   if (action.type === "craftsmanExtra" && action.good) {
     const prices: Record<Good, number> = { corn: 0.5, indigo: 1, sugar: 2, tobacco: 3, coffee: 4 };

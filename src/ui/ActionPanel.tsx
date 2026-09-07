@@ -38,6 +38,7 @@ function isBoardMapped(action: Action): boolean {
   if (action.type === "settlerTake" && action.source !== "pass") return true;
   if (action.type === "builderBuild" && action.buildingId) return true;
   if (action.type === "mayorPlace" && action.target.kind !== "sanJuan") return true;
+  if (action.type === "mayorRemove") return true;
   if (action.type === "traderSell" && action.good) return true;
   if (action.type === "craftsmanExtra" && action.good) return true;
   if (action.type === "captainLoad") return true;

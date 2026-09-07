@@ -104,7 +104,7 @@ export type Phase =
   | { type: "chooseRole" }
   | { type: "settlerHacienda"; actorIndex: number }
   | { type: "settlerTake"; actorIndex: number }
-  | { type: "mayorAssign"; actorIndex: number }
+  | { type: "mayorAssign"; actorIndex: number; received: number }
   | { type: "builder"; actorIndex: number }
   | { type: "craftsmanPrivilege"; actorIndex: number; produced: Good[] }
   | { type: "trader"; actorIndex: number }
@@ -159,6 +159,10 @@ export type Action =
   | {
       type: "mayorPlace";
       target: { kind: "island"; index: number } | { kind: "building"; instanceId: string } | { kind: "sanJuan" };
+    }
+  | {
+      type: "mayorRemove";
+      target: { kind: "island"; index: number } | { kind: "building"; instanceId: string };
     }
   | { type: "mayorDone" }
   | { type: "builderBuild"; buildingId: BuildingId }

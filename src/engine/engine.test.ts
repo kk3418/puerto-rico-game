@@ -12,6 +12,7 @@ import {
   shipCapacities,
   startingDoubloons,
   colonistCount,
+  totalColonists,
   vpChipCount,
   scorePlayer,
   type Action,
@@ -197,16 +198,108 @@ describe("captain", () => {
 });
 
 describe("mayor", () => {
-  it("gives the mayor an extra colonist and distributes the ship", () => {
-    let s = setup(3);
-    const before = s.colonistShip;
-    s = choose(s, "mayor");
-    expect(s.phase.type).toBe("mayorAssign");
-    const placed = s.players.reduce(
-      (n, p) => n + p.unplacedColonists + p.sanJuan + p.island.reduce((a, t) => a + t.colonists, 0),
-      0,
+  function allColonists(state: GameState): number {
+    return (
+      state.colonistSupply +
+      state.colonistShip +
+      state.players.reduce((sum, player) => sum + totalColonists(player), 0)
     );
-    expect(placed).toBeGreaterThanOrEqual(before + 1 + 3);
+  }
+
+  it("preserves existing placements and tracks only the assignment pool received this turn", () => {
+    let s = setup(3);
+    const player = s.players[0]!;
+    player.city.push({ instanceId: "staffed", buildingId: "smallMarket", colonists: 1 });
+    player.unplacedColonists = 1;
+    player.sanJuan = 2;
+    s.colonistSupply -= 4;
+
+    s = choose(s, "mayor");
+
+    expect(s.phase).toEqual({ type: "mayorAssign", actorIndex: 0, received: 2 });
+    expect(s.players[0]!.island[0]!.colonists).toBe(1);
+    expect(s.players[0]!.city[0]!.colonists).toBe(1);
+    expect(s.players[0]!.unplacedColonists).toBe(5);
+    expect(s.players[0]!.sanJuan).toBe(0);
+    expect(allColonists(s)).toBe(colonistCount(3));
+  });
+
+  it("removes and re-places colonists without creating or losing any", () => {
+    let s = setup(3);
+    s.players[0]!.city.push({ instanceId: "market", buildingId: "smallMarket", colonists: 0 });
+    s = choose(s, "mayor");
+    const expectedTotal = allColonists(s);
+    const poolBefore = s.players[0]!.unplacedColonists;
+
+    const remove: Action = { type: "mayorRemove", target: { kind: "island", index: 0 } };
+    expect(getLegalActions(s)).toContainEqual(remove);
+    s = play(s, remove);
+    expect(s.players[0]!.island[0]!.colonists).toBe(0);
+    expect(s.players[0]!.unplacedColonists).toBe(poolBefore + 1);
+    expect(allColonists(s)).toBe(expectedTotal);
+
+    const place: Action = {
+      type: "mayorPlace",
+      target: { kind: "building", instanceId: "market" },
+    };
+    expect(getLegalActions(s)).toContainEqual(place);
+    s = play(s, place);
+    expect(s.players[0]!.city[0]!.colonists).toBe(1);
+    expect(s.players[0]!.unplacedColonists).toBe(poolBefore);
+    expect(allColonists(s)).toBe(expectedTotal);
+    expect(() =>
+      play(s, { type: "mayorRemove", target: { kind: "building", instanceId: "missing" } }),
+    ).toThrow(/Illegal action/);
+  });
+
+  it("still allows editing when a player receives no new colonists", () => {
+    let s = setup(3);
+    s.colonistShip = 0;
+    s.colonistSupply = 0;
+    s = choose(s, "mayor");
+
+    expect(s.phase).toEqual({ type: "mayorAssign", actorIndex: 0, received: 0 });
+    expect(getLegalActions(s)).toContainEqual({ type: "mayorDone" });
+    expect(getLegalActions(s)).toContainEqual({
+      type: "mayorRemove",
+      target: { kind: "island", index: 0 },
+    });
+  });
+
+  it("allows completion only after open circles are filled, then advances every player and refills the ship", () => {
+    let s = setup(3);
+    s.players[0]!.city.push({ instanceId: "market", buildingId: "smallMarket", colonists: 0 });
+    const expectedTotal = allColonists(s);
+    s = choose(s, "mayor");
+
+    expect(getLegalActions(s)).not.toContainEqual({ type: "mayorDone" });
+    s = play(s, { type: "mayorPlace", target: { kind: "building", instanceId: "market" } });
+    expect(getLegalActions(s)).toContainEqual({ type: "mayorDone" });
+    s = play(s, { type: "mayorDone" });
+    expect(s.phase).toMatchObject({ type: "mayorAssign", actorIndex: 1, received: 1 });
+    expect(s.players[0]!.sanJuan).toBe(1);
+
+    s = play(s, { type: "mayorDone" });
+    expect(s.phase).toMatchObject({ type: "mayorAssign", actorIndex: 2, received: 1 });
+    s = play(s, { type: "mayorDone" });
+
+    expect(s.phase.type).toBe("chooseRole");
+    expect(s.colonistShip).toBe(3);
+    expect(allColonists(s)).toBe(expectedTotal);
+  });
+
+  it("keeps removal below placement and completion in the heuristic", async () => {
+    let s = setup(3, 17);
+    s = choose(s, "mayor");
+    const legal = getLegalActions(s);
+    expect(legal.some((action) => action.type === "mayorRemove")).toBe(true);
+    const ai = new HeuristicAgent();
+    const selected = await ai.chooseAction({
+      state: s,
+      legalActions: legal,
+      playerId: s.players[0]!.id,
+    });
+    expect(selected.type).not.toBe("mayorRemove");
   });
 });
 

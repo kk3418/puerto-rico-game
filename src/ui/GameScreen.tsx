@@ -122,47 +122,66 @@ export function GameScreen({
         </button>
       </header>
 
-      <Board state={state} legal={humanTurn ? legal : []} onAct={onAct} humanTurn={humanTurn} />
-
-      <div className="table-body">
-        <PlayerBoard
-          player={you}
-          self
-          legal={humanTurn ? legal : []}
-          onAct={onAct}
-          humanTurn={humanTurn}
-          hideVp={false}
-        />
-        <div className="side">
+      <main className={`table-arena seats-${state.players.length}`}>
+        <div className="arena-board">
+          <Board state={state} legal={humanTurn ? legal : []} onAct={onAct} humanTurn={humanTurn} />
+        </div>
+        <div className="arena-action">
           <ActionPanel
             legal={humanTurn ? legal : []}
             onAct={onAct}
             busy={busy}
             prompt={phasePrompt(state.phase.type)}
           />
-          {others.map((p) => (
+        </div>
+        {others.map((p, index) => (
+          <div className={`player-seat seat-${index + 1}`} key={p.id}>
             <PlayerBoard
-              key={p.id}
               player={p}
               self={false}
               legal={[]}
               onAct={onAct}
               humanTurn={false}
               hideVp
+              activeRole={state.activeRole}
+              isActiveRoleOwner={state.activeRoleOwnerIndex === index + 1}
+              mayorReceived={receivedForPlayer(state, index + 1)}
             />
-          ))}
+          </div>
+        ))}
+        <div className="player-seat self-seat">
+          <PlayerBoard
+            player={you}
+            self
+            legal={humanTurn ? legal : []}
+            onAct={onAct}
+            humanTurn={humanTurn}
+            hideVp={false}
+            activeRole={state.activeRole}
+            isActiveRoleOwner={state.activeRoleOwnerIndex === 0}
+            mayorReceived={receivedForPlayer(state, 0)}
+          />
+        </div>
+        <aside className="arena-log">
+          <h2>航海日誌</h2>
           <ol className="log">
             {state.log.slice(-8).map((e) => (
               <li key={e.id}>{e.text}</li>
             ))}
           </ol>
           {error && <p className="error">{error}</p>}
-        </div>
-      </div>
+        </aside>
+      </main>
     </div>
   );
 }
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function receivedForPlayer(state: GameState, playerIndex: number): number | undefined {
+  return state.phase.type === "mayorAssign" && state.phase.actorIndex === playerIndex
+    ? state.phase.received
+    : undefined;
 }

@@ -4,6 +4,11 @@ import { completeRole } from "../round";
 import type { Action, GameState } from "../types";
 
 export function beginMayor(state: GameState, ownerIndex: number): void {
+  for (const player of state.players) {
+    player.unplacedColonists += player.sanJuan;
+    player.sanJuan = 0;
+  }
+
   const owner = state.players[ownerIndex]!;
   const extra = takeColonists(state, 1);
   owner.sanJuan += extra;
@@ -22,22 +27,11 @@ export function beginMayor(state: GameState, ownerIndex: number): void {
 
 function startAssign(state: GameState, actorIndex: number): void {
   const player = state.players[actorIndex]!;
-  let pool = player.sanJuan + player.unplacedColonists;
+  const received = player.sanJuan;
+  const pool = received + player.unplacedColonists;
   player.sanJuan = 0;
-  player.unplacedColonists = 0;
-  for (const tile of player.island) {
-    pool += tile.colonists;
-    tile.colonists = 0;
-  }
-  for (const b of player.city) {
-    pool += b.colonists;
-    b.colonists = 0;
-  }
   player.unplacedColonists = pool;
-  state.phase = { type: "mayorAssign", actorIndex };
-  if (pool === 0) {
-    finishMayorPlayer(state, actorIndex);
-  }
+  state.phase = { type: "mayorAssign", actorIndex, received };
 }
 
 export function legalMayor(state: GameState): Action[] {
@@ -45,23 +39,38 @@ export function legalMayor(state: GameState): Action[] {
   if (phase.type !== "mayorAssign") return [];
   const player = state.players[phase.actorIndex]!;
   const actions: Action[] = [];
-  if (player.unplacedColonists <= 0) {
-    return [{ type: "mayorDone" }];
+
+  if (player.unplacedColonists > 0) {
+    player.island.forEach((tile, index) => {
+      if (tile.colonists === 0) {
+        actions.push({ type: "mayorPlace", target: { kind: "island", index } });
+      }
+    });
+    for (const b of player.city) {
+      if (b.colonists < getBuilding(b.buildingId).circles) {
+        actions.push({ type: "mayorPlace", target: { kind: "building", instanceId: b.instanceId } });
+      }
+    }
   }
+
   player.island.forEach((tile, index) => {
-    if (tile.colonists === 0) {
-      actions.push({ type: "mayorPlace", target: { kind: "island", index } });
+    if (tile.colonists > 0) {
+      actions.push({ type: "mayorRemove", target: { kind: "island", index } });
     }
   });
   for (const b of player.city) {
-    if (b.colonists < getBuilding(b.buildingId).circles) {
-      actions.push({ type: "mayorPlace", target: { kind: "building", instanceId: b.instanceId } });
+    if (b.colonists > 0) {
+      actions.push({ type: "mayorRemove", target: { kind: "building", instanceId: b.instanceId } });
     }
   }
+
   const openIsland = player.island.some((t) => t.colonists === 0);
   const openBuilding = player.city.some((b) => b.colonists < getBuilding(b.buildingId).circles);
-  if (!openIsland && !openBuilding) {
+  if (player.unplacedColonists > 0 && !openIsland && !openBuilding) {
     actions.push({ type: "mayorPlace", target: { kind: "sanJuan" } });
+  }
+  if (player.unplacedColonists <= 0 || (!openIsland && !openBuilding)) {
+    actions.push({ type: "mayorDone" });
   }
   return actions;
 }
@@ -75,18 +84,36 @@ export function applyMayor(state: GameState, action: Action): void {
     finishMayorPlayer(state, phase.actorIndex);
     return;
   }
-  if (action.type !== "mayorPlace") return;
-  if (player.unplacedColonists <= 0) return;
-  player.unplacedColonists -= 1;
-  const target = action.target;
-  if (target.kind === "island") {
-    const tile = player.island[target.index];
-    if (tile) tile.colonists = 1;
-  } else if (target.kind === "building") {
-    const b = player.city.find((x) => x.instanceId === target.instanceId);
-    if (b) b.colonists += 1;
-  } else {
-    player.sanJuan += 1;
+
+  if (action.type === "mayorRemove") {
+    const target = action.target;
+    if (target.kind === "island") {
+      const tile = player.island[target.index];
+      if (!tile || tile.colonists <= 0) return;
+      tile.colonists -= 1;
+    } else {
+      const building = player.city.find((item) => item.instanceId === target.instanceId);
+      if (!building || building.colonists <= 0) return;
+      building.colonists -= 1;
+    }
+    player.unplacedColonists += 1;
+    return;
+  }
+
+  if (action.type === "mayorPlace" && player.unplacedColonists > 0) {
+    const target = action.target;
+    if (target.kind === "island") {
+      const tile = player.island[target.index];
+      if (!tile || tile.colonists !== 0) return;
+      tile.colonists = 1;
+    } else if (target.kind === "building") {
+      const building = player.city.find((item) => item.instanceId === target.instanceId);
+      if (!building || building.colonists >= getBuilding(building.buildingId).circles) return;
+      building.colonists += 1;
+    } else {
+      player.sanJuan += 1;
+    }
+    player.unplacedColonists -= 1;
   }
 }
 

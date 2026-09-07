@@ -64,6 +64,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       applySettler(next, action);
       break;
     case "mayorPlace":
+    case "mayorRemove":
     case "mayorDone":
       applyMayor(next, action);
       break;
