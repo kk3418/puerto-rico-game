@@ -1,4 +1,4 @@
-import { getBuilding, totalColonists, type Action, type PlayerState } from "../engine";
+import { CITY_SPACES, citySpacesUsed, getBuilding, totalColonists, type Action, type PlayerState } from "../engine";
 import { GOOD_TONE, GOOD_ZH, ROLE_ZH, TILE_ZH } from "./labels";
 import type { Good, Role } from "../engine/types";
 import { GameIcon } from "./icons";
@@ -28,6 +28,7 @@ export function PlayerBoard({
 }) {
   const goods = (Object.keys(player.goods) as Good[]).filter((g) => player.goods[g] > 0);
   const colonists = totalColonists(player);
+  const emptyCitySpaces = Math.max(0, CITY_SPACES - citySpacesUsed(player));
   return (
     <article className={`player-board ${self ? "self" : ""}`}>
       <header className="player-status">
@@ -45,11 +46,62 @@ export function PlayerBoard({
 
       <div className={`role-seat ${isActiveRoleOwner && activeRole ? "occupied" : ""}`} aria-label="本輪角色">
         {isActiveRoleOwner && activeRole ? (
-          <><GameIcon kind={activeRole} /><span>{ROLE_ZH[activeRole]}</span></>
+          <><GameIcon kind={activeRole} size={32} /><span>{ROLE_ZH[activeRole]}</span></>
         ) : (
           <span>角色位</span>
         )}
       </div>
+
+      <section className="player-zone city-zone">
+        <h3>建築物區</h3>
+        <div className="city-grid">
+          {player.city.map((b) => {
+            const def = getBuilding(b.buildingId);
+            const place = legal.find(
+              (a) => a.type === "mayorPlace" && a.target.kind === "building" && a.target.instanceId === b.instanceId,
+            );
+            const remove = findMayorRemove(legal, { kind: "building", instanceId: b.instanceId });
+            return (
+              <Tooltip
+                key={b.instanceId}
+                content={BUILDING_TIP[b.buildingId]}
+                className={`city-slot ${def.citySpaces > 1 ? "wide" : ""}`}
+              >
+                <span className={`city-card ${remove ? "editable" : ""}`}>
+                  <button
+                    className={`bld ${def.kind} ${def.citySpaces > 1 ? "wide" : ""} ${place ? "lit" : ""}`}
+                    disabled={!humanTurn || !place}
+                    onClick={() => place && onAct(place)}
+                  >
+                    <span className="building-name">{def.nameZh}</span>
+                    <span className="colonist-circles" aria-label={`${b.colonists}/${def.circles} 名殖民者`}>
+                      {Array.from({ length: def.circles }).map((_, index) => (
+                        <span key={index} className={index < b.colonists ? "filled" : ""}>
+                          {index < b.colonists && <GameIcon kind="colonist" size={self ? 18 : 15} />}
+                        </span>
+                      ))}
+                    </span>
+                  </button>
+                  {remove && (
+                    <button
+                      type="button"
+                      className="remove-colonist"
+                      onClick={() => onAct(remove)}
+                      disabled={!humanTurn}
+                      aria-label={`從${def.nameZh}取回一名殖民者`}
+                    >
+                      −<GameIcon kind="colonist" size={13} />
+                    </button>
+                  )}
+                </span>
+              </Tooltip>
+            );
+          })}
+          {Array.from({ length: emptyCitySpaces }).map((_, index) => (
+            <div key={`empty-city-${index}`} className="city-empty" aria-label="空的建築格" />
+          ))}
+        </div>
+      </section>
 
       <section className="player-zone island-zone">
         <h3>種植園區</h3>
@@ -81,49 +133,6 @@ export function PlayerBoard({
         </div>
       </section>
 
-      <section className="player-zone city-zone">
-        <h3>建築物區</h3>
-        <div className="city-grid">
-          {player.city.map((b) => {
-            const def = getBuilding(b.buildingId);
-            const place = legal.find(
-              (a) => a.type === "mayorPlace" && a.target.kind === "building" && a.target.instanceId === b.instanceId,
-            );
-            const remove = findMayorRemove(legal, { kind: "building", instanceId: b.instanceId });
-            return (
-              <Tooltip key={b.instanceId} content={BUILDING_TIP[b.buildingId]}>
-                <span className={`city-card ${remove ? "editable" : ""}`}>
-                  <button
-                    className={`bld ${def.kind} ${def.citySpaces > 1 ? "wide" : ""} ${place ? "lit" : ""}`}
-                    disabled={!humanTurn || !place}
-                    onClick={() => place && onAct(place)}
-                  >
-                    <span className="building-name">{def.nameZh}</span>
-                    <span className="colonist-circles" aria-label={`${b.colonists}/${def.circles} 名殖民者`}>
-                      {Array.from({ length: def.circles }).map((_, index) => (
-                        <span key={index} className={index < b.colonists ? "filled" : ""} />
-                      ))}
-                    </span>
-                  </button>
-                  {remove && (
-                    <button
-                      type="button"
-                      className="remove-colonist"
-                      onClick={() => onAct(remove)}
-                      disabled={!humanTurn}
-                      aria-label={`從${def.nameZh}取回一名殖民者`}
-                    >
-                      −<GameIcon kind="colonist" size={13} />
-                    </button>
-                  )}
-                </span>
-              </Tooltip>
-            );
-          })}
-          {player.city.length === 0 && <p className="empty-zone">尚無建築</p>}
-        </div>
-      </section>
-
       {goods.length > 0 && (
         <section className="player-zone goods-zone">
           <h3>貨物</h3>
@@ -135,7 +144,7 @@ export function PlayerBoard({
               const keep = legal.filter((a) => a.type === "captainStore" && (a.extra === g || a.keepTypes.includes(g)));
               return (
                 <div key={g} className="good-chip" style={{ background: GOOD_TONE[g] }}>
-                  <span className="icon-label"><GameIcon kind={g} />{GOOD_ZH[g]} ×{player.goods[g]}</span>
+                  <span className="icon-label"><GameIcon kind={g} size={26} />{GOOD_ZH[g]} ×{player.goods[g]}</span>
                   {sell && (
                     <button onClick={() => onAct(sell)} disabled={!humanTurn}>賣</button>
                   )}

@@ -102,24 +102,82 @@ export function GameIcon({
     );
   }
 
+  if (kind === "settler") {
+    return (
+      <svg {...common}>
+        <path d="M4.2 16.2h13.4l.8 2.3H3.6z" fill="#8a5a32" />
+        <path d="M5.2 16.2 7.6 9.4h5.7l2.8 6.8" fill="#c9a36a" stroke="#5c3a20" strokeWidth="1.1" />
+        <circle cx="7.4" cy="18.4" r="2" fill="#3d2a18" stroke="#d7b27a" strokeWidth="1" />
+        <circle cx="16.2" cy="18.4" r="2" fill="#3d2a18" stroke="#d7b27a" strokeWidth="1" />
+        <path d="M9.4 9.4V5.6h4.2l1.8 3.8" fill="#e6c98a" stroke="#5c3a20" strokeWidth="1" />
+      </svg>
+    );
+  }
+  if (kind === "mayor") {
+    return (
+      <svg {...common}>
+        <circle cx="7.2" cy="8.4" r="2.3" fill="#ead6b7" />
+        <path d="M3.6 17.8c.3-4 1.6-6.2 3.6-6.2s3.3 2.2 3.6 6.2z" fill="#7a3428" />
+        <circle cx="16.8" cy="8.4" r="2.3" fill="#ead6b7" />
+        <path d="M13.2 17.8c.3-4 1.6-6.2 3.6-6.2s3.3 2.2 3.6 6.2z" fill="#7a3428" />
+        <circle cx="12" cy="7.2" r="2.6" fill="#f3e2c7" />
+        <path d="M8.1 18.4c.4-4.6 1.9-7.2 3.9-7.2s3.5 2.6 3.9 7.2z" fill="#9a3628" />
+      </svg>
+    );
+  }
+  if (kind === "builder") {
+    return (
+      <svg {...common}>
+        <path d="M4 19.4V9.2h16v10.2" fill="#8d6a45" stroke="#efd3a2" strokeWidth="1.1" />
+        <path d="M6 19.4V12h3v7.4M11 19.4V11h3v8.4M16 19.4V13h3v6.4" fill="#c4a06a" />
+        <path d="M3.4 9.2h17.2M3.4 13h17.2M3.4 16.4h17.2" stroke="#5c3a20" strokeWidth="1" />
+        <path d="M5.2 8.4 12 4.2 18.8 8.4" fill="none" stroke="#d7b27a" strokeWidth="1.3" />
+      </svg>
+    );
+  }
+  if (kind === "craftsman") {
+    return (
+      <svg {...common}>
+        <rect x="3.4" y="12.6" width="8.2" height="6.2" rx="0.6" fill="#b8894d" stroke="#5c3a20" strokeWidth="1" />
+        <rect x="12.4" y="13.4" width="8.2" height="5.4" rx="0.6" fill="#c9a36a" stroke="#5c3a20" strokeWidth="1" />
+        <rect x="7.4" y="6.4" width="9.2" height="6.4" rx="0.6" fill="#e0bf7a" stroke="#5c3a20" strokeWidth="1" />
+        <path d="M5.2 15.6h4.6M14.4 16h4.2M9.6 9.5h4.8" stroke="#7b5428" strokeWidth="1" />
+      </svg>
+    );
+  }
+  if (kind === "trader") {
+    return (
+      <svg {...common}>
+        <path d="M7.2 9.6c.6-3.4 2.1-5.4 4.8-5.4s4.2 2 4.8 5.4" fill="#c9a36a" stroke="#5c3a20" strokeWidth="1.1" />
+        <path d="M5.2 10.2h13.6l-1.4 10.2H6.6z" fill="#d8b56a" stroke="#5c3a20" strokeWidth="1.2" />
+        <path d="M9.4 7.8h5.2c.2 1.4.2 2.6 0 3.4H9.4c-.2-.8-.2-2 0-3.4z" fill="#8a5a32" />
+        <path d="M8.4 14.4h7.2M7.8 17.2h8.4" stroke="#7b5428" strokeWidth="1" />
+      </svg>
+    );
+  }
+  if (kind === "captain") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="7.6" fill="none" stroke="#d7b27a" strokeWidth="2.2" />
+        <circle cx="12" cy="12" r="2.2" fill="#c9a36a" stroke="#5c3a20" strokeWidth="1" />
+        <path d="M12 3.6v3.2M12 17.2v3.2M3.6 12h3.2M17.2 12h3.2M6.2 6.2l2.2 2.2M15.6 15.6l2.2 2.2M6.2 17.8l2.2-2.2M15.6 8.4l2.2-2.2" stroke="#efd3a2" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (kind === "prospector") {
+    return (
+      <svg {...common}>
+        <path d="M5 19.4 11.4 8.6" stroke="#c9a36a" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M9.4 6.2 13.6 9.8 11.8 11.4 7.6 7.8z" fill="#8a5a32" stroke="#efd3a2" strokeWidth="1" />
+        <path d="M13.2 19.2 19.4 8.2" stroke="#c9a36a" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M16.6 5.4c2.6.4 3.8 2.4 3.6 4.6-1.8-.2-3.2-1.4-3.8-3.2z" fill="#8d8f93" stroke="#d7dcdb" strokeWidth="1" />
+      </svg>
+    );
+  }
+
   return (
     <svg {...common}>
       <circle cx="12" cy="12" r="9" fill="#70442a" stroke="#efcf91" strokeWidth="1.4" />
-      <text x="12" y="15" textAnchor="middle" fontSize="9" fontWeight="900" fill="#fff4d2">
-        {roleMark(kind)}
-      </text>
     </svg>
   );
-}
-
-function roleMark(role: Role): string {
-  return {
-    settler: "拓",
-    mayor: "市",
-    builder: "建",
-    craftsman: "工",
-    trader: "商",
-    captain: "船",
-    prospector: "金",
-  }[role];
 }

@@ -30,7 +30,7 @@ export function Board({
                 disabled={!humanTurn || !action}
                 onClick={() => action && onAct(action)}
               >
-                <span className="icon-label"><GameIcon kind={role} /><strong>{ROLE_ZH[role]}</strong></span>
+                <span className="icon-label role-label"><GameIcon kind={role} size={40} /><strong>{ROLE_ZH[role]}</strong></span>
                 {slot.doubloons > 0 && <span className="coin"><GameIcon kind="coin" size={15} />{slot.doubloons}</span>}
               </button>
             </Tooltip>
@@ -52,7 +52,7 @@ export function Board({
                   disabled={!humanTurn || !action}
                   onClick={() => action && onAct(action)}
                 >
-                  <span className="icon-label"><GameIcon kind={tile} />{TILE_ZH[tile]}</span>
+                  <span className="icon-label"><GameIcon kind={tile} size={26} />{TILE_ZH[tile]}</span>
                 </button>
               );
             })}
@@ -62,7 +62,7 @@ export function Board({
                 style={{ background: GOOD_TONE.quarry }}
                 onClick={() => onAct({ type: "settlerTake", source: "quarry" })}
               >
-                <span className="icon-label"><GameIcon kind="quarry" />採石場</span>
+                <span className="icon-label"><GameIcon kind="quarry" size={26} />採石場</span>
                 <span className="tile-count">×{state.quarrySupply}</span>
               </button>
             )}
@@ -79,7 +79,7 @@ export function Board({
                   <span className="icon-label">
                     <GameIcon kind="ship" />
                     {ship.capacity} 艙
-                    {ship.good ? <><GameIcon kind={ship.good} />{ship.loaded}</> : " · 空船"}
+                    {ship.good ? <><GameIcon kind={ship.good} size={24} />{ship.loaded}</> : " · 空船"}
                   </span>
                   {loads.map((a) =>
                     a.type === "captainLoad" ? (
@@ -99,7 +99,7 @@ export function Board({
           <div className="tile-row">
             {state.tradingHouse.map((g, i) => (
               <span key={i} className="barrel icon-label" style={{ background: GOOD_TONE[g] }}>
-                <GameIcon kind={g} />{GOOD_ZH[g]}
+                <GameIcon kind={g} size={26} />{GOOD_ZH[g]}
               </span>
             ))}
           </div>
@@ -112,7 +112,7 @@ export function Board({
           <div className="goods-supply" aria-label="貨物供應">
             {(Object.keys(GOOD_ZH) as Good[]).map((g) => (
               <span key={g} className="icon-label" title={`${GOOD_ZH[g]}供應`}>
-                <GameIcon kind={g} /><b>{state.goodsSupply[g]}</b>
+                <GameIcon kind={g} size={24} /><b>{state.goodsSupply[g]}</b>
               </span>
             ))}
           </div>
@@ -121,35 +121,43 @@ export function Board({
 
       <div className="market">
         <h2>建築市場</h2>
-        <div className="market-grid">
-          {BUILDING_IDS.map((id) => {
-            const def = getBuilding(id);
-            const action = legal.find((a) => a.type === "builderBuild" && a.buildingId === id);
-            const phase = state.phase;
-            const builderPhase = phase.type === "builder";
-            const actor = builderPhase ? state.players[phase.actorIndex] : undefined;
-            const privilege = builderPhase && phase.actorIndex === state.activeRoleOwnerIndex;
-            const affordable = !!(actor && humanTurn && canBuild(state, actor, id, privilege));
-            const enabled = !!(humanTurn && (action || affordable));
-            return (
-              <Tooltip key={id} content={BUILDING_TIP[id]}>
-                <button
-                  type="button"
-                  className={`market-item ${def.kind} ${enabled ? "lit" : ""}`}
-                  disabled={!enabled}
-                  onClick={() => onAct(action ?? { type: "builderBuild", buildingId: id })}
-                >
-                  <b>{def.nameZh}</b>
-                  <span className="market-stats">
-                    <span className="icon-label"><GameIcon kind="coin" size={14} />{def.cost}</span>
-                    <span className="icon-label"><GameIcon kind="vp" size={14} />{def.vp}</span>
-                    <span>剩 {state.buildingSupply[id]}</span>
-                  </span>
-                </button>
-              </Tooltip>
-            );
-          })}
-        </div>
+        {[1, 2, 3, 4].map((quarryColumn) => (
+          <div key={quarryColumn} className="market-row">
+            <span className="market-row-label" title={`最多 ${quarryColumn} 座採石場折扣`}>
+              <GameIcon kind="quarry" size={22} />
+              ×{quarryColumn}
+            </span>
+            <div className="market-grid">
+              {BUILDING_IDS.filter((id) => getBuilding(id).quarryColumn === quarryColumn).map((id) => {
+                const def = getBuilding(id);
+                const action = legal.find((a) => a.type === "builderBuild" && a.buildingId === id);
+                const phase = state.phase;
+                const builderPhase = phase.type === "builder";
+                const actor = builderPhase ? state.players[phase.actorIndex] : undefined;
+                const privilege = builderPhase && phase.actorIndex === state.activeRoleOwnerIndex;
+                const affordable = !!(actor && humanTurn && canBuild(state, actor, id, privilege));
+                const enabled = !!(humanTurn && (action || affordable));
+                return (
+                  <Tooltip key={id} content={BUILDING_TIP[id]}>
+                    <button
+                      type="button"
+                      className={`market-item ${def.kind} ${enabled ? "lit" : ""}`}
+                      disabled={!enabled}
+                      onClick={() => onAct(action ?? { type: "builderBuild", buildingId: id })}
+                    >
+                      <b>{def.nameZh}</b>
+                      <span className="market-stats">
+                        <span className="icon-label"><GameIcon kind="coin" size={14} />{def.cost}</span>
+                        <span className="icon-label"><GameIcon kind="vp" size={14} />{def.vp}</span>
+                        <span>剩 {state.buildingSupply[id]}</span>
+                      </span>
+                    </button>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );
