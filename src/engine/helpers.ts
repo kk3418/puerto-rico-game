@@ -1,6 +1,6 @@
 import { getBuilding } from "./buildings";
 import { shuffleInPlace } from "./rng";
-import type { Action, BuildingId, GameState, Good, PlayerState, TileType } from "./types";
+import type { Action, BuildingId, GameState, Good, PlayerState, Role, TileType } from "./types";
 import { GOODS } from "./types";
 
 export const ISLAND_SPACES = 12;
@@ -203,4 +203,8 @@ export function actorIndex(state: GameState): number | null {
   if (phase.type === "gameOver") return null;
   if ("actorIndex" in phase) return phase.actorIndex;
   return null;
+}
+
+export function chosenRoleFor(state: GameState, playerIndex: number): Role | null {
+  return state.roles.find((slot) => slot.takenBy === playerIndex)?.role ?? null;
 }

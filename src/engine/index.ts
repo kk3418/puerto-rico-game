@@ -18,6 +18,7 @@ export { createInitialState, colonistCount, vpChipCount, shipCapacities, startin
 export { applyAction, getLegalActions, getActorIndex, roleLabel, actionsEqual } from "./reduce";
 export {
   actorIndex,
+  chosenRoleFor,
   citySpacesUsed,
   citySpacesLeft,
   islandSpacesLeft,

@@ -20,6 +20,7 @@ function endGovernorRound(state: GameState): void {
   for (const slot of state.roles) {
     if (!slot.taken) slot.doubloons += 1;
     slot.taken = false;
+    slot.takenBy = null;
   }
   if (state.endTriggered) {
     finishGame(state);

@@ -12,7 +12,7 @@ export function PlayerBoard({
   onAct,
   humanTurn,
   hideVp,
-  activeRole,
+  chosenRole,
   isActiveRoleOwner,
   mayorReceived,
 }: {
@@ -22,7 +22,7 @@ export function PlayerBoard({
   onAct: (action: Action) => void;
   humanTurn: boolean;
   hideVp: boolean;
-  activeRole?: Role | null;
+  chosenRole?: Role | null;
   isActiveRoleOwner?: boolean;
   mayorReceived?: number;
 }) {
@@ -44,9 +44,12 @@ export function PlayerBoard({
         </div>
       </header>
 
-      <div className={`role-seat ${isActiveRoleOwner && activeRole ? "occupied" : ""}`} aria-label="本輪角色">
-        {isActiveRoleOwner && activeRole ? (
-          <><GameIcon kind={activeRole} size={32} /><span>{ROLE_ZH[activeRole]}</span></>
+      <div
+        className={`role-seat ${chosenRole ? "occupied" : ""} ${isActiveRoleOwner ? "active" : ""}`}
+        aria-label={chosenRole ? `本輪角色：${ROLE_ZH[chosenRole]}` : "本輪角色"}
+      >
+        {chosenRole ? (
+          <><GameIcon kind={chosenRole} size={32} /><span>{ROLE_ZH[chosenRole]}</span></>
         ) : (
           <span>角色位</span>
         )}

@@ -80,6 +80,7 @@ export interface RoleSlot {
   role: Role;
   doubloons: number;
   taken: boolean;
+  takenBy: number | null;
 }
 
 export interface LogEntry {

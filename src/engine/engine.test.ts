@@ -15,6 +15,7 @@ import {
   totalColonists,
   vpChipCount,
   scorePlayer,
+  chosenRoleFor,
   type Action,
   type GameState,
 } from "../engine";
@@ -93,6 +94,24 @@ describe("prospector", () => {
     expect(s.players[0]!.doubloons).toBe(gold + 1);
     expect(s.phase.type).toBe("chooseRole");
     expect(s.chooserIndex).toBe(1);
+  });
+
+  it("keeps the chosen role on the player's seat after the role resolves", () => {
+    let s = setup(4);
+    s = choose(s, "prospector");
+    expect(s.activeRole).toBeNull();
+    expect(s.activeRoleOwnerIndex).toBeNull();
+    expect(chosenRoleFor(s, 0)).toBe("prospector");
+
+    s = choose(s, "builder");
+    expect(chosenRoleFor(s, 0)).toBe("prospector");
+    expect(chosenRoleFor(s, 1)).toBe("builder");
+    for (let i = 0; i < 4; i++) {
+      s = play(s, { type: "builderBuild", buildingId: null });
+    }
+    expect(s.phase.type).toBe("chooseRole");
+    expect(chosenRoleFor(s, 0)).toBe("prospector");
+    expect(chosenRoleFor(s, 1)).toBe("builder");
   });
 });
 

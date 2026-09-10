@@ -88,6 +88,7 @@ export function createInitialState(options: SetupOptions): GameState {
       role,
       doubloons: 0,
       taken: false,
+      takenBy: null,
     })),
     plantationDeck: deck,
     plantationDiscard: [],

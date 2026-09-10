@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { HeuristicAgent, HumanAgent, dispatchAction, type PlayerAgent } from "../agents";
 import {
+  chosenRoleFor,
   createInitialState,
   getActorIndex,
   getLegalActions,
@@ -143,7 +144,7 @@ export function GameScreen({
               onAct={onAct}
               humanTurn={false}
               hideVp
-              activeRole={state.activeRole}
+              chosenRole={chosenRoleFor(state, index + 1)}
               isActiveRoleOwner={state.activeRoleOwnerIndex === index + 1}
               mayorReceived={receivedForPlayer(state, index + 1)}
             />
@@ -157,7 +158,7 @@ export function GameScreen({
             onAct={onAct}
             humanTurn={humanTurn}
             hideVp={false}
-            activeRole={state.activeRole}
+            chosenRole={chosenRoleFor(state, 0)}
             isActiveRoleOwner={state.activeRoleOwnerIndex === 0}
             mayorReceived={receivedForPlayer(state, 0)}
           />

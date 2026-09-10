@@ -348,6 +348,10 @@
   font-weight: 800;
 }
 
+.role-seat.active {
+  outline: 2px solid #f6e3b0;
+}
+
 .player-zone { margin-top: 0.55rem; }
 
 .player-zone h3 {
