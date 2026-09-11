@@ -3,3 +3,4 @@ dist
 .pdf_tools/
 .DS_Store
 *.local
+.cursor/

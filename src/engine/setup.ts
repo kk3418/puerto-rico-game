@@ -1,6 +1,6 @@
 import { emptyBuildingSupply } from "./buildings";
 import { emptyGoods, refillFaceUp } from "./helpers";
-import { shuffleInPlace } from "./rng";
+import { nextUnit, shuffleInPlace } from "./rng";
 import type { GameState, PlayerCount, PlayerState, Role, SetupOptions, TileType } from "./types";
 
 const AI_NAMES = ["伊莎貝拉", "迭戈", "卡塔莉娜", "羅倫佐"];
@@ -43,7 +43,7 @@ export function createInitialState(options: SetupOptions): GameState {
       isHuman,
       doubloons: startingDoubloons(playerCount),
       vpChips: 0,
-      island: [{ type: starts[i]!, colonists: 1 }],
+      island: [],
       city: [],
       goods: emptyGoods(),
       sanJuan: 0,
@@ -63,7 +63,7 @@ export function createInitialState(options: SetupOptions): GameState {
   }
 
   const deck: TileType[] = [...corn, ...indigo, ...sugar, ...tobacco, ...coffee];
-  const rng = shuffleInPlace(deck, seed);
+  let rng = shuffleInPlace(deck, seed);
 
   const roles: Role[] =
     playerCount === 3
@@ -74,12 +74,23 @@ export function createInitialState(options: SetupOptions): GameState {
 
   const colonists = colonistCount(playerCount);
   const shipColonists = playerCount;
+  let governorIndex = options.governorIndex;
+  if (governorIndex === undefined) {
+    const pick = nextUnit(rng);
+    rng = pick.rng;
+    governorIndex = Math.floor(pick.value * playerCount);
+  }
+
+  for (let i = 0; i < playerCount; i++) {
+    const offset = (i - governorIndex + playerCount) % playerCount;
+    players[i]!.island = [{ type: starts[offset]!, colonists: 0 }];
+  }
 
   const state: GameState = {
     playerCount,
     players,
-    governorIndex: 0,
-    chooserIndex: 0,
+    governorIndex,
+    chooserIndex: governorIndex,
     activeRole: null,
     activeRoleOwnerIndex: null,
     phase: { type: "chooseRole" },
@@ -94,7 +105,7 @@ export function createInitialState(options: SetupOptions): GameState {
     plantationDiscard: [],
     faceUpPlantations: [],
     quarrySupply: 8,
-    colonistSupply: colonists - playerCount - shipColonists,
+    colonistSupply: colonists - shipColonists,
     colonistShip: shipColonists,
     tradingHouse: [],
     ships: shipCapacities(playerCount).map((capacity) => ({
@@ -117,12 +128,11 @@ export function createInitialState(options: SetupOptions): GameState {
     difficulty: options.difficulty,
   };
 
-  // Starting colonists on plantations came from the supply (already subtracted playerCount).
   refillFaceUp(state);
   state.log = [
     {
       id: 1,
-      text: `第 1 輪開始。總督是${state.players[0]!.name}。請選擇角色。`,
+      text: `第 1 輪開始。總督是${state.players[governorIndex]!.name}。請選擇角色。`,
     },
   ];
   state.logSeq = 1;

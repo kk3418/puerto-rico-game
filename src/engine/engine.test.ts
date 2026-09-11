@@ -21,7 +21,7 @@ import {
 } from "../engine";
 
 function setup(playerCount: 3 | 4 | 5 = 3, seed = 1): GameState {
-  return createInitialState({ playerCount, difficulty: "balanced", seed });
+  return createInitialState({ playerCount, difficulty: "balanced", seed, governorIndex: 0 });
 }
 
 function play(state: GameState, action: Action): GameState {
@@ -41,7 +41,8 @@ describe("setup", () => {
       expect(s.players).toHaveLength(n);
       expect(s.players[0]!.doubloons).toBe(startingDoubloons(n));
       expect(s.vpSupply).toBe(vpChipCount(n));
-      expect(s.colonistSupply + n + s.colonistShip).toBe(colonistCount(n));
+      expect(s.colonistSupply + s.colonistShip).toBe(colonistCount(n));
+      expect(s.players.every((p) => p.island[0]!.colonists === 0)).toBe(true);
       expect(s.ships.map((x) => x.capacity)).toEqual([...shipCapacities(n)]);
       expect(s.faceUpPlantations).toHaveLength(n + 1);
       expect(s.quarrySupply).toBe(8);
@@ -49,14 +50,40 @@ describe("setup", () => {
     }
   });
 
-  it("gives indigo/corn according to seat", () => {
+  it("gives indigo/corn clockwise from the governor, unoccupied", () => {
     const s3 = setup(3);
     const s4 = setup(4);
     const s5 = setup(5);
     expect(s3.players.map((p) => p.island[0]!.type)).toEqual(["indigo", "indigo", "corn"]);
     expect(s4.players.map((p) => p.island[0]!.type)).toEqual(["indigo", "indigo", "corn", "corn"]);
     expect(s5.players.map((p) => p.island[0]!.type)).toEqual(["indigo", "indigo", "indigo", "corn", "corn"]);
-    expect(s4.players.every((p) => p.island[0]!.colonists === 1)).toBe(true);
+    expect(s4.players.every((p) => p.island[0]!.colonists === 0)).toBe(true);
+
+    const s4g2 = createInitialState({
+      playerCount: 4,
+      difficulty: "balanced",
+      seed: 1,
+      governorIndex: 2,
+    });
+    expect(s4g2.players.map((p) => p.island[0]!.type)).toEqual(["corn", "corn", "indigo", "indigo"]);
+  });
+
+  it("picks the first governor from the seed when not pinned", () => {
+    const governors = new Set<number>();
+    for (let seed = 0; seed < 40; seed++) {
+      const s = createInitialState({ playerCount: 4, difficulty: "balanced", seed });
+      expect(s.governorIndex).toBeGreaterThanOrEqual(0);
+      expect(s.governorIndex).toBeLessThan(4);
+      expect(s.chooserIndex).toBe(s.governorIndex);
+      expect(s.log[0]!.text).toContain(s.players[s.governorIndex]!.name);
+      const g = s.governorIndex;
+      expect(s.players[g]!.island[0]!.type).toBe("indigo");
+      expect(s.players[(g + 1) % 4]!.island[0]!.type).toBe("indigo");
+      expect(s.players[(g + 2) % 4]!.island[0]!.type).toBe("corn");
+      expect(s.players[(g + 3) % 4]!.island[0]!.type).toBe("corn");
+      governors.add(s.governorIndex);
+    }
+    expect(governors.size).toBeGreaterThan(1);
   });
 
   it("deals prospectors by player count", () => {
@@ -118,6 +145,8 @@ describe("prospector", () => {
 describe("craftsman", () => {
   it("produces corn without a building and offers privilege extra", () => {
     let s = setup(3, 7);
+    s.players[2]!.island[0]!.colonists = 1;
+    s.colonistSupply -= 1;
     s = choose(s, "craftsman");
     expect(s.phase.type).toBe("craftsmanPrivilege");
     expect(s.players[0]!.goods.indigo).toBe(0);
@@ -228,10 +257,11 @@ describe("mayor", () => {
   it("preserves existing placements and tracks only the assignment pool received this turn", () => {
     let s = setup(3);
     const player = s.players[0]!;
+    player.island[0]!.colonists = 1;
     player.city.push({ instanceId: "staffed", buildingId: "smallMarket", colonists: 1 });
     player.unplacedColonists = 1;
     player.sanJuan = 2;
-    s.colonistSupply -= 4;
+    s.colonistSupply -= 5;
 
     s = choose(s, "mayor");
 
@@ -245,6 +275,8 @@ describe("mayor", () => {
 
   it("removes and re-places colonists without creating or losing any", () => {
     let s = setup(3);
+    s.players[0]!.island[0]!.colonists = 1;
+    s.colonistSupply -= 1;
     s.players[0]!.city.push({ instanceId: "market", buildingId: "smallMarket", colonists: 0 });
     s = choose(s, "mayor");
     const expectedTotal = allColonists(s);
@@ -273,6 +305,7 @@ describe("mayor", () => {
 
   it("still allows editing when a player receives no new colonists", () => {
     let s = setup(3);
+    s.players[0]!.island[0]!.colonists = 1;
     s.colonistShip = 0;
     s.colonistSupply = 0;
     s = choose(s, "mayor");
@@ -293,13 +326,17 @@ describe("mayor", () => {
 
     expect(getLegalActions(s)).not.toContainEqual({ type: "mayorDone" });
     s = play(s, { type: "mayorPlace", target: { kind: "building", instanceId: "market" } });
+    expect(getLegalActions(s)).not.toContainEqual({ type: "mayorDone" });
+    s = play(s, { type: "mayorPlace", target: { kind: "island", index: 0 } });
     expect(getLegalActions(s)).toContainEqual({ type: "mayorDone" });
     s = play(s, { type: "mayorDone" });
     expect(s.phase).toMatchObject({ type: "mayorAssign", actorIndex: 1, received: 1 });
-    expect(s.players[0]!.sanJuan).toBe(1);
+    expect(s.players[0]!.sanJuan).toBe(0);
 
+    s = play(s, { type: "mayorPlace", target: { kind: "island", index: 0 } });
     s = play(s, { type: "mayorDone" });
     expect(s.phase).toMatchObject({ type: "mayorAssign", actorIndex: 2, received: 1 });
+    s = play(s, { type: "mayorPlace", target: { kind: "island", index: 0 } });
     s = play(s, { type: "mayorDone" });
 
     expect(s.phase.type).toBe("chooseRole");
@@ -309,6 +346,8 @@ describe("mayor", () => {
 
   it("keeps removal below placement and completion in the heuristic", async () => {
     let s = setup(3, 17);
+    s.players[0]!.island[0]!.colonists = 1;
+    s.colonistSupply -= 1;
     s = choose(s, "mayor");
     const legal = getLegalActions(s);
     expect(legal.some((action) => action.type === "mayorRemove")).toBe(true);
