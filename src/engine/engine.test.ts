@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HeuristicAgent } from "../agents/heuristic";
+import { HeuristicAgent, HEURISTIC_TABLE_PAUSE_MS } from "../agents/heuristic";
 import { dispatchAction } from "../agents/turnLoop";
 import {
   applyAction,
@@ -319,6 +319,17 @@ describe("mayor", () => {
       playerId: s.players[0]!.id,
     });
     expect(selected.type).not.toBe("mayorRemove");
+  });
+});
+
+describe("heuristic table pause", () => {
+  it("stays within 5–10 seconds so LLM agents can skip it later", () => {
+    const ai = new HeuristicAgent();
+    for (let i = 0; i < 40; i++) {
+      const ms = ai.tablePauseAfterActionMs();
+      expect(ms).toBeGreaterThanOrEqual(HEURISTIC_TABLE_PAUSE_MS.min);
+      expect(ms).toBeLessThanOrEqual(HEURISTIC_TABLE_PAUSE_MS.max);
+    }
   });
 });
 

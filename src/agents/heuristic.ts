@@ -5,7 +5,14 @@ import { occupiedQuarries, producedAmount, totalColonists } from "../engine/help
 import { GOODS, type Action, type GameState, type Good, type PlayerState } from "../engine/types";
 import type { PlayerAgent } from "./types";
 
+export const HEURISTIC_TABLE_PAUSE_MS = { min: 5_000, max: 10_000 } as const;
+
 export class HeuristicAgent implements PlayerAgent {
+  tablePauseAfterActionMs(): number {
+    const { min, max } = HEURISTIC_TABLE_PAUSE_MS;
+    return min + Math.floor(Math.random() * (max - min + 1));
+  }
+
   async chooseAction(input: {
     state: GameState;
     legalActions: Action[];

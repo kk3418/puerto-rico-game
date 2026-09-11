@@ -38,6 +38,8 @@ export function GameScreen({
   useEffect(() => {
     const human = humanRef.current;
     let cancelled = false;
+    let delayTimer: ReturnType<typeof setTimeout> | undefined;
+    let delayResolve: (() => void) | undefined;
     const initial = startRef.current!;
     const agents: Record<string, PlayerAgent> = {};
     for (const p of initial.players) {
@@ -71,9 +73,11 @@ export function GameScreen({
         if (cancelled) return;
         current = await dispatchAction(current, action, player.id);
         setState(current);
-        if (!player.isHuman) {
-          await delay(240);
+        const pause = agent.tablePauseAfterActionMs?.() ?? 0;
+        if (pause > 0) {
+          await delay(pause);
         }
+        if (cancelled) return;
       }
       setBusy(false);
       setAwaitingHuman(false);
@@ -87,8 +91,21 @@ export function GameScreen({
       }
     });
 
+    function delay(ms: number): Promise<void> {
+      return new Promise((resolve) => {
+        delayResolve = resolve;
+        delayTimer = setTimeout(() => {
+          delayTimer = undefined;
+          delayResolve = undefined;
+          resolve();
+        }, ms);
+      });
+    }
+
     return () => {
       cancelled = true;
+      if (delayTimer !== undefined) clearTimeout(delayTimer);
+      delayResolve?.();
       human.cancel();
     };
   }, [playerCount, difficulty]);
@@ -107,6 +124,7 @@ export function GameScreen({
 
   const legal = getLegalActions(state);
   const humanTurn = awaitingHuman && !busy;
+  const actor = getActorIndex(state);
   const you = state.players[0]!;
   const others = state.players.slice(1);
 
@@ -140,6 +158,7 @@ export function GameScreen({
             <PlayerBoard
               player={p}
               self={false}
+              acting={actor === index + 1}
               legal={[]}
               onAct={onAct}
               humanTurn={false}
@@ -154,6 +173,7 @@ export function GameScreen({
           <PlayerBoard
             player={you}
             self
+            acting={actor === 0}
             legal={humanTurn ? legal : []}
             onAct={onAct}
             humanTurn={humanTurn}
@@ -175,10 +195,6 @@ export function GameScreen({
       </main>
     </div>
   );
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function receivedForPlayer(state: GameState, playerIndex: number): number | undefined {

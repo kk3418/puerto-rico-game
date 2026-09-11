@@ -6,4 +6,9 @@ export interface PlayerAgent {
     legalActions: Action[];
     playerId: string;
   }): Promise<Action>;
+  /**
+   * Extra table-feel pause after a resolved action.
+   * Only the local heuristic uses this; an LLM agent should omit it and rely on API latency.
+   */
+  tablePauseAfterActionMs?(): number;
 }

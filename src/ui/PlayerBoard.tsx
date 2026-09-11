@@ -8,6 +8,7 @@ import { BUILDING_TIP } from "./tooltips";
 export function PlayerBoard({
   player,
   self,
+  acting,
   legal,
   onAct,
   humanTurn,
@@ -18,6 +19,7 @@ export function PlayerBoard({
 }: {
   player: PlayerState;
   self: boolean;
+  acting?: boolean;
   legal: Action[];
   onAct: (action: Action) => void;
   humanTurn: boolean;
@@ -30,7 +32,7 @@ export function PlayerBoard({
   const colonists = totalColonists(player);
   const emptyCitySpaces = Math.max(0, CITY_SPACES - citySpacesUsed(player));
   return (
-    <article className={`player-board ${self ? "self" : ""}`}>
+    <article className={`player-board ${self ? "self" : ""} ${acting ? "acting" : ""}`}>
       <header className="player-status">
         <h2>{player.name}</h2>
         <div className="status-resources">

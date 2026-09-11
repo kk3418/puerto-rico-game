@@ -290,7 +290,7 @@
   overflow: visible;
 }
 
-.player-board.self {
+.player-board.acting {
   border-color: rgba(246, 227, 176, 0.55);
   background: linear-gradient(145deg, rgba(232, 201, 122, 0.18), rgba(12, 42, 45, 0.65));
   box-shadow: 0 0 0 2px rgba(232, 201, 122, 0.08), 0 0.7rem 1.5rem rgba(5, 25, 27, 0.25);
@@ -514,6 +514,9 @@
 
 .player-seat:not(.self-seat) .player-board {
   font-size: 0.86rem;
+}
+
+.player-board:not(.acting) {
   background: rgba(12, 42, 45, 0.68);
 }
 
