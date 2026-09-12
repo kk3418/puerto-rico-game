@@ -1,39 +1,65 @@
 import { useEffect, useRef, useState } from "react";
+import { abandonMatch, finishMatch, putMatchSave } from "../api/matches";
 import { HeuristicAgent, HumanAgent, dispatchAction, type PlayerAgent } from "../agents";
 import {
   chosenRoleFor,
+  cloneViaJson,
   createInitialState,
   getActorIndex,
   getLegalActions,
   type Difficulty,
   type GameState,
   type PlayerCount,
+  type ScoreBreakdown,
 } from "../engine";
 import { ActionPanel } from "./ActionPanel";
 import { Board } from "./Board";
 import { EndScreen } from "./EndScreen";
 import { PlayerBoard } from "./PlayerBoard";
 import { phasePrompt } from "./labels";
+import { useMatchSync } from "./useMatchSync";
 import "./GameScreen.css";
 
 export function GameScreen({
+  matchId,
   playerCount,
   difficulty,
+  seed,
+  nickname,
+  initialState,
+  nextSeq,
   onExit,
 }: {
+  matchId: string;
   playerCount: PlayerCount;
   difficulty: Difficulty;
+  seed: number;
+  nickname: string;
+  initialState?: GameState;
+  nextSeq: number;
   onExit: () => void;
 }) {
   const humanRef = useRef(new HumanAgent());
   const startRef = useRef<GameState | null>(null);
   if (!startRef.current) {
-    startRef.current = createInitialState({ playerCount, difficulty });
+    startRef.current = initialState
+      ? cloneViaJson(initialState)
+      : createInitialState({ playerCount, difficulty, seed, humanName: nickname });
   }
   const [state, setState] = useState<GameState>(startRef.current);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const [busy, setBusy] = useState(false);
   const [awaitingHuman, setAwaitingHuman] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [serverScores, setServerScores] = useState<ScoreBreakdown[] | null>(null);
+  const [serverReason, setServerReason] = useState<string | null>(null);
+  const [verified, setVerified] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
+  const [finishing, setFinishing] = useState(false);
+  const { enqueue, flush, pending, syncError } = useMatchSync(matchId, nextSeq);
 
   useEffect(() => {
     const human = humanRef.current;
@@ -71,7 +97,9 @@ export function GameScreen({
         });
         setAwaitingHuman(false);
         if (cancelled) return;
+        const before = current;
         current = await dispatchAction(current, action, player.id);
+        enqueue(before, action, idx);
         setState(current);
         const pause = agent.tablePauseAfterActionMs?.() ?? 0;
         if (pause > 0) {
@@ -108,7 +136,30 @@ export function GameScreen({
       delayResolve?.();
       human.cancel();
     };
-  }, [playerCount, difficulty]);
+  }, [difficulty, enqueue, playerCount]);
+
+  useEffect(() => {
+    if (!state.gameOver || !state.scores) return;
+    let cancelled = false;
+    setFinishing(true);
+    void (async () => {
+      await flush();
+      const result = await finishMatch(matchId);
+      if (cancelled) return;
+      setServerScores(result.scores);
+      setServerReason(result.endReason);
+      setVerified(result.verified);
+    })()
+      .catch((err: Error) => {
+        if (!cancelled) setFinishError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setFinishing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [flush, matchId, state.gameOver, state.scores]);
 
   function onAct(action: Parameters<typeof dispatchAction>[1]) {
     try {
@@ -118,8 +169,56 @@ export function GameScreen({
     }
   }
 
+  async function onSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await flush();
+      const saved = await putMatchSave(matchId, stateRef.current);
+      setSavedAt(saved.savedAt);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "存檔失敗");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function onLeave() {
+    try {
+      await flush();
+      if (!stateRef.current.gameOver) {
+        await abandonMatch(matchId);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "離開失敗");
+    }
+    onExit();
+  }
+
   if (state.gameOver && state.scores) {
-    return <EndScreen scores={state.scores} reason={state.endReason} onAgain={onExit} />;
+    return (
+      <EndScreen
+        scores={serverScores ?? state.scores}
+        reason={serverReason ?? state.endReason}
+        verified={verified}
+        finishing={finishing}
+        finishError={finishError}
+        onRetryFinish={() => {
+          setFinishError(null);
+          setFinishing(true);
+          void (async () => {
+            await flush();
+            const result = await finishMatch(matchId);
+            setServerScores(result.scores);
+            setServerReason(result.endReason);
+            setVerified(result.verified);
+          })()
+            .catch((err: Error) => setFinishError(err.message))
+            .finally(() => setFinishing(false));
+        }}
+        onAgain={onExit}
+      />
+    );
   }
 
   const legal = getLegalActions(state);
@@ -135,10 +234,17 @@ export function GameScreen({
         <p>
           第 {state.round} 輪 · 總督 {state.players[state.governorIndex]?.name}
           {state.endTriggered ? " · 終局已觸發" : ""}
+          {pending > 0 ? " · 同步中" : ""}
+          {savedAt ? " · 已存檔" : ""}
         </p>
-        <button type="button" className="text-btn" onClick={onExit}>
-          離開
-        </button>
+        <div className="table-actions">
+          <button type="button" className="text-btn" disabled={saving} onClick={() => void onSave()}>
+            {saving ? "存檔中…" : "存檔"}
+          </button>
+          <button type="button" className="text-btn" onClick={() => void onLeave()}>
+            離開
+          </button>
+        </div>
       </header>
 
       <main className={`table-arena seats-${state.players.length}`}>
@@ -190,6 +296,8 @@ export function GameScreen({
               <li key={e.id}>{e.text}</li>
             ))}
           </ol>
+          <p className="save-note">存檔僅供單人續玩。之後多人對局需全體同意才能存檔。</p>
+          {syncError && <p className="error">{syncError}</p>}
           {error && <p className="error">{error}</p>}
         </aside>
       </main>

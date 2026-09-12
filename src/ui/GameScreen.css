@@ -41,6 +41,17 @@
   font-weight: 700;
 }
 
+.table-actions {
+  display: flex;
+  gap: 0.8rem;
+}
+
+.save-note {
+  margin: 0.8rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
 .table-arena {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
