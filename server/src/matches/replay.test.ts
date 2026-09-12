@@ -1,0 +1,96 @@
+import { describe, expect, it } from "vitest";
+import { HeuristicAgent } from "../../../src/agents/heuristic";
+import {
+  applyAction,
+  createInitialState,
+  getActorIndex,
+  getLegalActions,
+  scoreGame,
+  type Action,
+} from "../../../src/engine";
+import { isSupportedSaveSchema, replayMatch, SAVE_SCHEMA_VERSION } from "./replay";
+
+async function recordGame(seed: number): Promise<{ actions: Action[]; scores: ReturnType<typeof scoreGame> }> {
+  let state = createInitialState({
+    playerCount: 3,
+    difficulty: "balanced",
+    seed,
+    humanName: "測試者",
+  });
+  state = {
+    ...state,
+    players: state.players.map((p) => ({ ...p, isHuman: false })),
+  };
+  const ai = new HeuristicAgent();
+  const actions: Action[] = [];
+  let guard = 0;
+  while (!state.gameOver && guard++ < 5000) {
+    const legal = getLegalActions(state);
+    const idx = getActorIndex(state);
+    if (legal.length === 0 || idx === null) break;
+    const action = await ai.chooseAction({
+      state,
+      legalActions: legal,
+      playerId: state.players[idx]!.id,
+    });
+    actions.push(action);
+    state = applyAction(state, action);
+  }
+  return { actions, scores: scoreGame(state) };
+}
+
+describe("replayMatch", () => {
+  it("rejects an empty event list", () => {
+    const result = replayMatch({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 1,
+      humanName: "你",
+      actions: [],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("empty");
+  });
+
+  it("rejects a game that has not ended", () => {
+    const start = createInitialState({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 1,
+      humanName: "你",
+      governorIndex: 0,
+    });
+    const first = getLegalActions(start)[0]!;
+    const result = replayMatch({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 1,
+      humanName: "你",
+      actions: [first],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("not-over");
+  });
+
+  it("replays a finished match and does not trust a client-invented score", async () => {
+    const recorded = await recordGame(2024);
+    expect(recorded.actions.length).toBeGreaterThan(10);
+    const result = replayMatch({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 2024,
+      humanName: "測試者",
+      actions: recorded.actions,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.gameOver).toBe(true);
+    expect(result.scores.map((s) => s.total)).toEqual(recorded.scores.map((s) => s.total));
+    expect(result.scores[0]!.total).not.toBe(9999);
+  }, 20000);
+
+  it("accepts the current save schema and rejects an unknown major", () => {
+    expect(isSupportedSaveSchema(SAVE_SCHEMA_VERSION)).toBe(true);
+    expect(isSupportedSaveSchema("2.0")).toBe(false);
+  });
+});

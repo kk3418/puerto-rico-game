@@ -31,7 +31,7 @@ export function startingPlantations(playerCount: PlayerCount): TileType[] {
 
 export function createInitialState(options: SetupOptions): GameState {
   const playerCount = options.playerCount;
-  const seed = options.seed ?? Date.now() >>> 0;
+  const seed = options.seed ?? (Date.now() & 0x7fffffff);
   const starts = startingPlantations(playerCount);
   const players: PlayerState[] = [];
 

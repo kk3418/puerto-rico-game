@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String?  @unique
+  displayName String
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  accounts     AccountProvider[]
+  participants MatchParticipant[]
+  stats        UserStats?
+  saves        MatchSave[]
+}
+
+model AccountProvider {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  sid    String   @id
+  sess   Json
+  expire DateTime
+
+  @@index([expire])
+}
+
+model Match {
+  id          String    @id @default(cuid())
+  mode        String    @default("solo")
+  playerCount Int
+  difficulty  String
+  seed        Int
+  humanName   String
+  endReason   String?
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  status      String    @default("playing")
+  verified    Boolean   @default(false)
+
+  participants MatchParticipant[]
+  events       MatchEvent[]
+  save         MatchSave?
+
+  @@index([status, startedAt])
+}
+
+model MatchParticipant {
+  id           String  @id @default(cuid())
+  matchId      String
+  seatIndex    Int
+  nickname     String
+  userId       String?
+  guestId      String?
+  isHuman      Boolean
+  isAi         Boolean
+  vpChips      Int?
+  buildingVp   Int?
+  guildHall    Int?
+  residence    Int?
+  fortress     Int?
+  customsHouse Int?
+  cityHall     Int?
+  total        Int?
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([matchId, seatIndex])
+  @@index([userId])
+  @@index([guestId])
+}
+
+model MatchEvent {
+  id             String   @id @default(cuid())
+  matchId        String
+  seq            Int
+  round          Int
+  phaseType      String?
+  activeRole     String?
+  actorSeatIndex Int
+  actorUserId    String?
+  action         Json
+  createdAt      DateTime @default(now())
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, seq])
+}
+
+model UserStats {
+  userId       String    @id
+  gamesPlayed  Int       @default(0)
+  gamesWon     Int       @default(0)
+  totalScore   Int       @default(0)
+  bestScore    Int       @default(0)
+  lastPlayedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MatchSave {
+  matchId         String   @id
+  stateJson       Json
+  schemaVersion   String
+  savedByUserId   String?
+  savedAt         DateTime @updatedAt
+  consentRequired Boolean  @default(false)
+
+  match   Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  savedBy User? @relation(fields: [savedByUserId], references: [id], onDelete: SetNull)
+}
