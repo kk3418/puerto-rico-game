@@ -1,7 +1,8 @@
 .table {
   --table-header-height: 4.25rem;
+  --table-action-height: 3rem;
   min-height: 100vh;
-  padding: calc(var(--table-header-height) + 1rem) clamp(0.7rem, 2vw, 1.5rem) 2rem;
+  padding: calc(var(--table-header-height) + var(--table-action-height) + 0.5rem) clamp(0.7rem, 2vw, 1.5rem) 2rem;
   color: var(--paper);
 }
 
@@ -22,7 +23,6 @@
   background: rgba(9, 40, 45, 0.92);
   box-shadow: 0 0.35rem 1rem rgba(3, 18, 20, 0.35);
   backdrop-filter: blur(12px);
-  z-index: 10;
 }
 
 .table-top p { margin-block: 0; }
@@ -51,13 +51,23 @@
 }
 
 .arena-board,
-.arena-action,
 .arena-log {
   grid-column: 1 / -1;
 }
 
+.arena-action {
+  position: fixed;
+  z-index: 40;
+  top: var(--table-header-height);
+  left: 0;
+  right: 0;
+  padding: 0.4rem clamp(0.7rem, 2vw, 1.5rem) 0.5rem;
+  background: rgba(9, 40, 45, 0.94);
+  border-bottom: 1px solid rgba(246, 227, 176, 0.2);
+  box-shadow: 0 0.35rem 0.8rem rgba(3, 18, 20, 0.28);
+  backdrop-filter: blur(12px);
+}
 .arena-board { order: 1; }
-.arena-action { order: 2; }
 .self-seat { order: 3; }
 .player-seat:not(.self-seat) { order: 4; }
 .arena-log { order: 5; }
@@ -72,9 +82,26 @@
   box-shadow: 0 0.5rem 1.3rem rgba(5, 25, 27, 0.18);
 }
 
-.public-board { padding: 0.8rem; }
-.action-panel,
-.arena-log { padding: 0.7rem 0.8rem; }
+.public-board { padding: 0.8rem; margin-top: 3.5rem; }
+.action-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  max-width: 112rem;
+  margin: 0 auto;
+  padding: 0.1rem 0.15rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.arena-log {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.7rem 0.8rem;
+}
 
 .public-board h2,
 .player-board h2,
@@ -85,7 +112,15 @@
   margin: 0 0 0.45rem;
 }
 
-.arena-log h2 { color: var(--sand-light); }
+.action-panel h2 {
+  margin: 0;
+  flex: 0 1 auto;
+}
+
+.arena-log h2 {
+  color: var(--sand-light);
+  flex-shrink: 0;
+}
 
 .role-row,
 .tile-row,
@@ -532,6 +567,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+  flex: 0 1 auto;
+}
+
+.act-list button {
+  min-height: 2.15rem;
+  padding: 0.4rem 0.75rem;
 }
 
 .legal-count {
@@ -542,13 +583,14 @@
 }
 
 .thinking {
-  margin: 0.2rem 0;
+  margin: 0;
   color: var(--sand);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
 .log {
   max-height: 9rem;
+  min-height: 0;
   overflow: auto;
   margin: 0;
   padding-left: 1.1rem;
@@ -616,7 +658,6 @@
     grid-template-areas:
       "seat1 board self"
       "seat2 board self"
-      ". action ."
       "log log log";
   }
 
@@ -624,7 +665,6 @@
     grid-template-areas:
       "seat1 board seat3"
       "seat2 board self"
-      ". action ."
       "log log log";
   }
 
@@ -633,12 +673,10 @@
       "seat1 board seat3"
       "seat2 board self"
       ". seat4 ."
-      ". action ."
       "log log log";
   }
 
   .arena-board { grid-area: board; }
-  .arena-action { grid-area: action; }
   .arena-log { grid-area: log; }
   .self-seat { grid-area: self; }
   .seat-1 { grid-area: seat1; }
@@ -661,6 +699,10 @@
   .table {
     --table-log-width: 12.5rem;
     padding-right: calc(var(--table-log-width) + 1.5rem);
+  }
+
+  .arena-action {
+    right: calc(var(--table-log-width) + 0.75rem);
   }
 
   .arena-log {
@@ -689,6 +731,11 @@
     max-height: 8rem;
     background: rgba(12, 42, 45, 0.94);
     backdrop-filter: blur(10px);
+  }
+
+  .arena-log .log {
+    max-height: none;
+    flex: 1 1 auto;
   }
 }
 
