@@ -51,6 +51,7 @@ export function GameScreen({
   stateRef.current = state;
   const [busy, setBusy] = useState(false);
   const [awaitingHuman, setAwaitingHuman] = useState(false);
+  const [turnSeat, setTurnSeat] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -82,6 +83,7 @@ export function GameScreen({
         if (legal.length === 0) break;
         const agent = agents[player.id];
         if (!agent) break;
+        setTurnSeat(idx);
         if (player.isHuman) {
           setBusy(false);
           setAwaitingHuman(true);
@@ -223,7 +225,6 @@ export function GameScreen({
 
   const legal = getLegalActions(state);
   const humanTurn = awaitingHuman && !busy;
-  const actor = getActorIndex(state);
   const you = state.players[0]!;
   const others = state.players.slice(1);
 
@@ -264,7 +265,7 @@ export function GameScreen({
             <PlayerBoard
               player={p}
               self={false}
-              acting={actor === index + 1}
+              acting={turnSeat === index + 1}
               legal={[]}
               onAct={onAct}
               humanTurn={false}
@@ -279,7 +280,7 @@ export function GameScreen({
           <PlayerBoard
             player={you}
             self
-            acting={actor === 0}
+            acting={humanTurn}
             legal={humanTurn ? legal : []}
             onAct={onAct}
             humanTurn={humanTurn}
