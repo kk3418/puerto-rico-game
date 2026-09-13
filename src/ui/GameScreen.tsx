@@ -56,7 +56,7 @@ export function GameScreen({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [dialog, setDialog] = useState<null | "leave" | "afterSave">(null);
   const [serverScores, setServerScores] = useState<ScoreBreakdown[] | null>(null);
   const [serverReason, setServerReason] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
@@ -189,8 +189,12 @@ export function GameScreen({
     }
   }
 
+  async function onSaveClick() {
+    if (await onSave()) setDialog("afterSave");
+  }
+
   function onLeave() {
-    setLeaveOpen(true);
+    setDialog("leave");
   }
 
   async function onLeaveYes() {
@@ -251,7 +255,7 @@ export function GameScreen({
           {savedAt ? " · 已存檔" : ""}
         </p>
         <div className="table-actions">
-          <button type="button" className="text-btn" disabled={saving} onClick={() => void onSave()}>
+          <button type="button" className="text-btn" disabled={saving} onClick={() => void onSaveClick()}>
             {saving ? "存檔中…" : "存檔"}
           </button>
           <button type="button" className="text-btn" onClick={onLeave}>
@@ -259,17 +263,33 @@ export function GameScreen({
           </button>
         </div>
       </header>
-      {leaveOpen && (
+      {dialog === "leave" && (
         <Dialog
           title="是否要存檔再離開？"
           showClose
-          onClose={() => setLeaveOpen(false)}
+          onClose={() => setDialog(null)}
           actions={
             <>
               <button type="button" className="text-btn" onClick={() => void onLeaveNo()}>
                 否
               </button>
               <button type="button" className="text-btn" onClick={() => void onLeaveYes()}>
+                是
+              </button>
+            </>
+          }
+        />
+      )}
+      {dialog === "afterSave" && (
+        <Dialog
+          title="是否要離開？"
+          showClose={false}
+          actions={
+            <>
+              <button type="button" className="text-btn" onClick={() => setDialog(null)}>
+                否
+              </button>
+              <button type="button" className="text-btn" onClick={onExit}>
                 是
               </button>
             </>
