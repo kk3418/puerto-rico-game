@@ -16,7 +16,7 @@ import { ActionPanel } from "./ActionPanel";
 import { Board } from "./Board";
 import { EndScreen } from "./EndScreen";
 import { PlayerBoard } from "./PlayerBoard";
-import { LeaveDialog } from "./LeaveDialog";
+import { Dialog } from "./Dialog";
 import { phasePrompt } from "./labels";
 import { useMatchSync } from "./useMatchSync";
 import "./GameScreen.css";
@@ -259,7 +259,21 @@ export function GameScreen({
           </button>
         </div>
       </header>
-      {leaveOpen && <LeaveDialog onYes={() => void onLeaveYes()} onNo={() => void onLeaveNo()} />}
+      {leaveOpen && (
+        <Dialog
+          title="是否要存檔？"
+          actions={
+            <>
+              <button type="button" className="text-btn" onClick={() => void onLeaveNo()}>
+                否
+              </button>
+              <button type="button" className="text-btn" onClick={() => void onLeaveYes()}>
+                是
+              </button>
+            </>
+          }
+        />
+      )}
 
       <main className={`table-arena seats-${state.players.length}`}>
         <div className="arena-board">
