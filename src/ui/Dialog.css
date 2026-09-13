@@ -9,6 +9,7 @@
 }
 
 .dialog-card {
+  position: relative;
   width: min(100%, 22rem);
   padding: 1.15rem 1.2rem 1.05rem;
   border: 1px solid rgba(246, 227, 176, 0.28);
@@ -17,8 +18,23 @@
   box-shadow: 0 1rem 2.4rem rgba(3, 18, 20, 0.45);
 }
 
+.dialog-close {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.5rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foam);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
 .dialog-card h2 {
-  margin: 0 0 1rem;
+  margin: 0 1.8rem 1rem 0;
   font-family: "Fraunces", serif;
   font-size: 1.25rem;
   color: var(--sand-light);

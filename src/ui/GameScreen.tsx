@@ -261,7 +261,9 @@ export function GameScreen({
       </header>
       {leaveOpen && (
         <Dialog
-          title="是否要存檔？"
+          title="是否要存檔再離開？"
+          showClose
+          onClose={() => setLeaveOpen(false)}
           actions={
             <>
               <button type="button" className="text-btn" onClick={() => void onLeaveNo()}>
