@@ -1,0 +1,31 @@
+.leave-dialog {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.2rem;
+  background: rgba(5, 22, 24, 0.62);
+}
+
+.leave-card {
+  width: min(100%, 22rem);
+  padding: 1.15rem 1.2rem 1.05rem;
+  border: 1px solid rgba(246, 227, 176, 0.28);
+  border-radius: 0.75rem;
+  background: rgba(9, 40, 45, 0.96);
+  box-shadow: 0 1rem 2.4rem rgba(3, 18, 20, 0.45);
+}
+
+.leave-card h2 {
+  margin: 0 0 1rem;
+  font-family: "Fraunces", serif;
+  font-size: 1.25rem;
+  color: var(--sand-light);
+}
+
+.leave-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}

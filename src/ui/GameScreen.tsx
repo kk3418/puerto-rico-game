@@ -16,6 +16,7 @@ import { ActionPanel } from "./ActionPanel";
 import { Board } from "./Board";
 import { EndScreen } from "./EndScreen";
 import { PlayerBoard } from "./PlayerBoard";
+import { LeaveDialog } from "./LeaveDialog";
 import { phasePrompt } from "./labels";
 import { useMatchSync } from "./useMatchSync";
 import "./GameScreen.css";
@@ -55,6 +56,7 @@ export function GameScreen({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const [serverScores, setServerScores] = useState<ScoreBreakdown[] | null>(null);
   const [serverReason, setServerReason] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
@@ -178,14 +180,24 @@ export function GameScreen({
       await flush();
       const saved = await putMatchSave(matchId, stateRef.current);
       setSavedAt(saved.savedAt);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "存檔失敗");
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
-  async function onLeave() {
+  function onLeave() {
+    setLeaveOpen(true);
+  }
+
+  async function onLeaveYes() {
+    if (await onSave()) onExit();
+  }
+
+  async function onLeaveNo() {
     try {
       await flush();
       if (!stateRef.current.gameOver) {
@@ -242,11 +254,12 @@ export function GameScreen({
           <button type="button" className="text-btn" disabled={saving} onClick={() => void onSave()}>
             {saving ? "存檔中…" : "存檔"}
           </button>
-          <button type="button" className="text-btn" onClick={() => void onLeave()}>
+          <button type="button" className="text-btn" onClick={onLeave}>
             離開
           </button>
         </div>
       </header>
+      {leaveOpen && <LeaveDialog onYes={() => void onLeaveYes()} onNo={() => void onLeaveNo()} />}
 
       <main className={`table-arena seats-${state.players.length}`}>
         <div className="arena-board">
