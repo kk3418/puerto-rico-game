@@ -362,7 +362,7 @@ describe("mayor", () => {
 });
 
 describe("heuristic table pause", () => {
-  it("stays within 5–10 seconds so LLM agents can skip it later", () => {
+  it("stays within 2.5–5 seconds so LLM agents can skip it later", () => {
     const ai = new HeuristicAgent();
     for (let i = 0; i < 40; i++) {
       const ms = ai.tablePauseAfterActionMs();

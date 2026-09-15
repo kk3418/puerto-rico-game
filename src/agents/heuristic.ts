@@ -5,7 +5,7 @@ import { occupiedQuarries, producedAmount, totalColonists } from "../engine/help
 import { GOODS, type Action, type GameState, type Good, type PlayerState } from "../engine/types";
 import type { PlayerAgent } from "./types";
 
-export const HEURISTIC_TABLE_PAUSE_MS = { min: 5_000, max: 10_000 } as const;
+export const HEURISTIC_TABLE_PAUSE_MS = { min: 2_500, max: 5_000 } as const;
 
 export class HeuristicAgent implements PlayerAgent {
   tablePauseAfterActionMs(): number {
