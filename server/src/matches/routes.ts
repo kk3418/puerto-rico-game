@@ -198,13 +198,13 @@ matchesRouter.get("/:id/state", async (req, res) => {
   const identity = requireIdentity(req);
   const match = await loadOwnedMatch(matchIdParam(req), identity);
   if (match.status !== "playing") {
-    throw new HttpError(409, "對局已結束，無法繼續");
+    throw new HttpError(404, "無法找到該局遊戲");
   }
   if (match.playerCount !== 3 && match.playerCount !== 4 && match.playerCount !== 5) {
-    throw new HttpError(400, "對局人數無效");
+    throw new HttpError(404, "無法找到該局遊戲");
   }
   if (match.difficulty !== "balanced" && match.difficulty !== "aggressive") {
-    throw new HttpError(400, "對局難度無效");
+    throw new HttpError(404, "無法找到該局遊戲");
   }
 
   const events = await prisma.matchEvent.findMany({
@@ -212,14 +212,14 @@ matchesRouter.get("/:id/state", async (req, res) => {
     orderBy: { seq: "asc" },
   });
   if (events.length !== match._count.events) {
-    throw new HttpError(409, "事件序號不完整");
+    throw new HttpError(404, "無法找到該局遊戲");
   }
   const actions = events.map((event, index) => {
     if (event.seq !== index + 1) {
-      throw new HttpError(409, "事件序號不完整");
+      throw new HttpError(404, "無法找到該局遊戲");
     }
     if (!isAction(event.action)) {
-      throw new HttpError(400, `事件 ${event.seq} 無法重放`);
+      throw new HttpError(404, "無法找到該局遊戲");
     }
     return event.action;
   });
@@ -232,7 +232,7 @@ matchesRouter.get("/:id/state", async (req, res) => {
     actions,
   });
   if (!replayed.ok) {
-    throw new HttpError(400, replayed.message);
+    throw new HttpError(404, "無法找到該局遊戲");
   }
 
   res.json({ ...matchSummary(match), state: replayed.state });

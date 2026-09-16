@@ -77,7 +77,7 @@ export function App() {
       try {
         await resumeLiveMatch(id);
       } catch (err) {
-        if (err instanceof ApiError && (err.status === 403 || err.status === 404 || err.status === 409)) {
+        if (err instanceof ApiError) {
           clearLastMatchId();
         }
       }
@@ -99,17 +99,23 @@ export function App() {
   }
 
   async function continueMatch(match: MatchSummary) {
-    await resumeLiveMatch(match.id);
+    try {
+      await resumeLiveMatch(match.id);
+    } catch {
+      throw new Error("無法找到該局遊戲");
+    }
   }
 
   async function continueLast() {
     const id = readLastMatchId();
-    if (!id) return;
+    if (!id) {
+      throw new Error("無法找到該局遊戲");
+    }
     try {
       await resumeLiveMatch(id);
-    } catch (err) {
+    } catch {
       clearLastMatchId();
-      throw err instanceof Error ? err : new Error("沒有可繼續的對局");
+      throw new Error("無法找到該局遊戲");
     }
   }
 
