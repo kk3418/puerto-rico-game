@@ -338,6 +338,12 @@ export function GameScreen({
             onAct={onAct}
             busy={busy}
             prompt={phasePrompt(state.phase.type)}
+            activeRole={state.phase.type === "chooseRole" ? null : state.activeRole}
+            roleOwnerName={
+              state.phase.type !== "chooseRole" && state.activeRoleOwnerIndex != null
+                ? state.players[state.activeRoleOwnerIndex]?.name
+                : null
+            }
           />
         </div>
         {others.map((p, index) => (
@@ -352,6 +358,7 @@ export function GameScreen({
               hideVp
               chosenRole={chosenRoleFor(state, index + 1)}
               isActiveRoleOwner={state.activeRoleOwnerIndex === index + 1}
+              isGovernor={state.governorIndex === index + 1}
               mayorReceived={receivedForPlayer(state, index + 1)}
             />
           </div>
@@ -367,6 +374,7 @@ export function GameScreen({
             hideVp={false}
             chosenRole={chosenRoleFor(state, 0)}
             isActiveRoleOwner={state.activeRoleOwnerIndex === 0}
+            isGovernor={state.governorIndex === 0}
             mayorReceived={receivedForPlayer(state, 0)}
           />
         </div>

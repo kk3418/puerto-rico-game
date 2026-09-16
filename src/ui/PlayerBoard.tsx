@@ -15,6 +15,7 @@ export function PlayerBoard({
   hideVp,
   chosenRole,
   isActiveRoleOwner,
+  isGovernor,
   mayorReceived,
 }: {
   player: PlayerState;
@@ -26,6 +27,7 @@ export function PlayerBoard({
   hideVp: boolean;
   chosenRole?: Role | null;
   isActiveRoleOwner?: boolean;
+  isGovernor?: boolean;
   mayorReceived?: number;
 }) {
   const goods = (Object.keys(player.goods) as Good[]).filter((g) => player.goods[g] > 0);
@@ -34,7 +36,14 @@ export function PlayerBoard({
   return (
     <article className={`player-board ${self ? "self" : ""} ${acting ? "acting" : ""}`}>
       <header className="player-status">
-        <h2>{player.name}</h2>
+        <h2>
+          {isGovernor && (
+            <Tooltip content="總督" className="governor-mark">
+              <GameIcon kind="governor" size={28} label="總督" />
+            </Tooltip>
+          )}
+          {player.name}
+        </h2>
         <div className="status-resources">
           <span className="icon-label" title="金幣"><GameIcon kind="coin" />{player.doubloons}</span>
           {!hideVp && <span className="icon-label" title="勝利分"><GameIcon kind="vp" />{player.vpChips}</span>}

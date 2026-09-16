@@ -117,6 +117,26 @@
   flex: 0 1 auto;
 }
 
+.action-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin: 0;
+  padding: 0.12rem 0.5rem 0.12rem 0.28rem;
+  border: 1px solid rgba(246, 227, 176, 0.38);
+  border-radius: 0.4rem;
+  background: #6b3e22;
+  color: var(--sand-light);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.action-role-owner {
+  font-size: 0.76rem;
+  font-weight: 700;
+  opacity: 0.88;
+}
+
 .arena-log-toggle {
   font-family: "Fraunces", serif;
   font-size: 0.95rem;
@@ -397,7 +417,38 @@
   padding-right: 5.2rem;
 }
 
-.player-status h2 { margin: 0; }
+.player-status h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  margin: 0;
+}
+
+.governor-mark {
+  flex-shrink: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 2px #fff4d2,
+    0 0 0.65rem rgba(240, 201, 56, 0.95);
+}
+
+.governor-mark .game-icon {
+  display: block;
+  width: 1.85rem;
+  height: 1.85rem;
+  filter: none;
+}
+
+.governor-mark .tooltip-content {
+  z-index: 120;
+  font-size: 0.84rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
 
 .status-resources {
   display: flex;

@@ -2,21 +2,33 @@ import type { Action } from "../engine";
 import { getBuilding } from "../engine";
 import { GOOD_ZH, ROLE_ZH } from "./labels";
 import type { Role } from "../engine/types";
+import { GameIcon } from "./icons";
 
 export function ActionPanel({
   legal,
   onAct,
   busy,
   prompt,
+  activeRole,
+  roleOwnerName,
 }: {
   legal: Action[];
   onAct: (action: Action) => void;
   busy: boolean;
   prompt: string;
+  activeRole?: Role | null;
+  roleOwnerName?: string | null;
 }) {
   const leftover = legal.filter((a) => !isBoardMapped(a));
   return (
     <aside className="action-panel">
+      {activeRole && (
+        <p className="action-role">
+          <GameIcon kind={activeRole} size={22} />
+          <strong>{ROLE_ZH[activeRole]}</strong>
+          {roleOwnerName && <span className="action-role-owner">{roleOwnerName} 選</span>}
+        </p>
+      )}
       <h2>
         {prompt}
         {legal.length > 0 && <span className="legal-count"> · {legal.length} 個選擇</span>}

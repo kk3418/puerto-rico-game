@@ -1,6 +1,6 @@
 import type { Good, Role, TileType } from "../engine/types";
 
-export type IconKind = Good | TileType | Role | "coin" | "vp" | "colonist" | "ship";
+export type IconKind = Good | TileType | Role | "coin" | "vp" | "colonist" | "ship" | "governor";
 
 export function GameIcon({
   kind,
@@ -50,6 +50,22 @@ export function GameIcon({
       <svg {...common}>
         <path d="M5 5h8v8H5zM13 7l5 4h-5z" fill="#f3e2b6" />
         <path d="M2.5 14h19l-3.7 6H7z" fill="#9b542c" stroke="#f0c98a" strokeWidth="1.2" />
+      </svg>
+    );
+  }
+  if (kind === "governor") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="10.2" fill="#f0c938" stroke="#fff6c8" strokeWidth="1.8" />
+        <path
+          d="M3.1 14.6C5.6 7.6 8.8 5 12 5s6.4 2.6 8.9 9.6c-2.7-1.7-5.7-2.5-8.9-2.5s-6.2.8-8.9 2.5z"
+          fill="#6b3e22"
+          stroke="#3b2011"
+          strokeWidth="1.1"
+        />
+        <path d="M7.4 12.4c1.2-3.2 2.8-4.6 4.6-4.6s3.4 1.4 4.6 4.6" fill="#8c5a28" />
+        <path d="M12 5.2v3.1" stroke="#f6e3b0" strokeWidth="1.5" strokeLinecap="round" />
+        <circle cx="12" cy="16.4" r="1.15" fill="#fff0ae" />
       </svg>
     );
   }
