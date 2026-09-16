@@ -187,23 +187,13 @@ export function PlayerBoard({
 }
 
 function HiddenVpChips({ vp }: { vp: number }) {
-  const fives = Math.floor(vp / 5);
-  const ones = vp % 5;
-  if (fives === 0 && ones === 0) return null;
+  if (vp <= 0) return null;
   return (
     <Tooltip content="勝利分籌碼（面朝下）" className="vp-chips">
-      {fives > 0 && (
-        <span className="vp-chip-group">
-          <GameIcon kind="vpFive" size={20} />
-          <span>×{fives}</span>
-        </span>
-      )}
-      {ones > 0 && (
-        <span className="vp-chip-group">
-          <GameIcon kind="vpOne" size={15} />
-          <span>×{ones}</span>
-        </span>
-      )}
+      <span className="vp-chip-stack" aria-label="勝利分籌碼面朝下">
+        <GameIcon kind="vpFive" size={20} />
+        <GameIcon kind="vpOne" size={15} />
+      </span>
     </Tooltip>
   );
 }

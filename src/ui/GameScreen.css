@@ -1,8 +1,8 @@
 .table {
   --table-header-height: 4.25rem;
-  --table-action-height: 3rem;
+  --table-action-height: 5.25rem;
   min-height: 100vh;
-  padding: calc(var(--table-header-height) + var(--table-action-height) + 0.5rem) clamp(0.7rem, 2vw, 1.5rem) 2rem;
+  padding: calc(var(--table-header-height) + var(--table-action-height) + 0.75rem) clamp(0.7rem, 2vw, 1.5rem) 2rem;
   color: var(--paper);
 }
 
@@ -94,7 +94,7 @@
   box-shadow: 0 0.5rem 1.3rem rgba(5, 25, 27, 0.18);
 }
 
-.public-board { padding: 0.8rem; margin-top: 3.5rem; }
+.public-board { padding: 0.8rem; }
 .public-board { container-type: inline-size; }
 .action-panel {
   display: flex;
@@ -287,16 +287,26 @@
 
 .vp-chips {
   align-items: center;
-  gap: 0.35rem;
 }
 
-.vp-chip-group {
+.vp-chip-stack {
+  position: relative;
   display: inline-flex;
-  align-items: center;
-  gap: 0.08rem;
-  font-size: 0.78rem;
-  font-weight: 800;
-  color: var(--sand-light);
+  align-items: flex-end;
+  width: 1.85rem;
+  height: 1.35rem;
+}
+
+.vp-chip-stack .game-icon:first-child {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+}
+
+.vp-chip-stack .game-icon:last-child {
+  position: absolute;
+  left: 0.55rem;
+  bottom: 0;
 }
 
 .coin {
@@ -416,7 +426,7 @@
 
 .player-board {
   position: relative;
-  padding: 0.65rem;
+  padding: 0.8rem 0.7rem 0.75rem;
   overflow: visible;
 }
 
@@ -458,13 +468,6 @@
   width: 1.85rem;
   height: 1.85rem;
   filter: none;
-}
-
-.governor-mark .tooltip-content {
-  z-index: 120;
-  font-size: 0.84rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
 }
 
 .status-resources {
@@ -581,7 +584,6 @@
   width: 100%;
   min-width: 0;
   aspect-ratio: 1 / 1;
-  container-type: inline-size;
 }
 
 .city-slot.wide {
@@ -596,6 +598,8 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
+  overflow: visible;
+  container-type: inline-size;
 }
 
 .bld {
@@ -706,6 +710,7 @@
   align-self: start;
   width: 100%;
   min-width: 0;
+  padding-top: 0.15rem;
 }
 
 .player-board:not(.acting) {
@@ -787,10 +792,8 @@ p.log {
 .market-grid > .tooltip { display: flex; }
 
 .tooltip-content {
-  position: absolute;
-  z-index: 20;
-  left: 50%;
-  bottom: calc(100% + 0.55rem);
+  position: fixed;
+  z-index: 200;
   width: max-content;
   max-width: min(17rem, 70vw);
   padding: 0.45rem 0.55rem;
@@ -805,16 +808,19 @@ p.log {
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  transform: translate(-50%, 0.25rem);
-  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
 }
 
-.tooltip:hover .tooltip-content,
-.tooltip:focus .tooltip-content,
-.tooltip:focus-within .tooltip-content {
+.tooltip-content.is-open {
   opacity: 1;
   visibility: visible;
-  transform: translate(-50%, 0);
+}
+
+.tooltip-content.tooltip-top {
+  transform: translate(-50%, calc(-100% - 0.55rem));
+}
+
+.tooltip-content.tooltip-bottom {
+  transform: translate(-50%, 0.55rem);
 }
 
 @keyframes pulse {
@@ -824,9 +830,9 @@ p.log {
 @media (min-width: 1100px) {
   .table-arena {
     grid-template-columns:
-      minmax(16rem, 1fr)
+      minmax(18rem, 1fr)
       minmax(30rem, 2fr)
-      minmax(16rem, 1fr);
+      minmax(18rem, 1fr);
     gap: 0.75rem;
   }
 
