@@ -19,7 +19,11 @@ export function ActionPanel({
   activeRole?: Role | null;
   roleOwnerName?: string | null;
 }) {
-  const leftover = legal.filter((a) => !isBoardMapped(a));
+  const leftover = legal.filter((a) => !isBoardMapped(a) && a.type !== "mayorDone");
+  const mayorDone = legal.find((a) => a.type === "mayorDone");
+  const mayorTurn = legal.some(
+    (a) => a.type === "mayorPlace" || a.type === "mayorRemove" || a.type === "mayorDone",
+  );
   return (
     <aside className="action-panel">
       {activeRole && (
@@ -40,6 +44,15 @@ export function ActionPanel({
             {describe(action)}
           </button>
         ))}
+        {mayorTurn && (
+          <button
+            className="act-confirm"
+            disabled={busy || !mayorDone}
+            onClick={() => mayorDone && onAct(mayorDone)}
+          >
+            確定
+          </button>
+        )}
       </div>
     </aside>
   );
@@ -68,7 +81,7 @@ function describe(action: Action): string {
     case "mayorPlace":
       return "放到聖胡安";
     case "mayorDone":
-      return "安置完成";
+      return "確定";
     case "builderBuild":
       return action.buildingId ? `建造${getBuilding(action.buildingId).nameZh}` : "不建造";
     case "craftsmanExtra":

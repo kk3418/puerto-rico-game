@@ -716,12 +716,17 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .act-list button {
   min-height: 2.15rem;
   padding: 0.4rem 0.75rem;
+}
+
+.act-confirm {
+  flex: 0 0 auto;
 }
 
 .legal-count {
