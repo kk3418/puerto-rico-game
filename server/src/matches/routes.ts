@@ -1,13 +1,15 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { Request } from "express";
 import { Router } from "express";
 import { z } from "zod";
+import { actionsEqual, applyAction } from "../../../src/engine";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, requireUser } from "../identity";
 import { canAccessMatch } from "./access";
 import { isAction, isSupportedSaveSchema, replayMatch, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
 import { classifySeq } from "./seq";
+import { refreshUserStats } from "./stats";
 
 const AI_NAMES = ["伊莎貝拉", "迭戈", "卡塔莉娜", "羅倫佐"];
 
@@ -212,14 +214,14 @@ matchesRouter.get("/:id/state", async (req, res) => {
     orderBy: { seq: "asc" },
   });
   if (events.length !== match._count.events) {
-    throw new HttpError(404, "無法找到該局遊戲");
+    throw new HttpError(409, "對局紀錄無法重放");
   }
   const actions = events.map((event, index) => {
     if (event.seq !== index + 1) {
-      throw new HttpError(404, "無法找到該局遊戲");
+      throw new HttpError(409, "對局紀錄無法重放");
     }
     if (!isAction(event.action)) {
-      throw new HttpError(404, "無法找到該局遊戲");
+      throw new HttpError(409, "對局紀錄無法重放");
     }
     return event.action;
   });
@@ -232,7 +234,7 @@ matchesRouter.get("/:id/state", async (req, res) => {
     actions,
   });
   if (!replayed.ok) {
-    throw new HttpError(404, "無法找到該局遊戲");
+    throw new HttpError(409, "對局紀錄無法重放");
   }
 
   res.json({ ...matchSummary(match), state: replayed.state });
@@ -245,7 +247,21 @@ matchesRouter.post("/:id/events", async (req, res) => {
 
   const body = z.object({ events: z.array(eventSchema).min(1).max(200) }).parse(req.body);
   const incoming = [...body.events].sort((a, b) => a.seq - b.seq);
-  let maxSeq = match._count.events;
+  const stored = await prisma.matchEvent.findMany({
+    where: { matchId: match.id },
+    orderBy: { seq: "asc" },
+  });
+  if (stored.length !== match._count.events) {
+    throw new HttpError(409, "事件序號不完整");
+  }
+  for (let i = 0; i < stored.length; i++) {
+    if (stored[i]!.seq !== i + 1) {
+      throw new HttpError(409, "事件序號不完整");
+    }
+  }
+
+  const bySeq = new Map(stored.map((event) => [event.seq, event]));
+  let maxSeq = stored.length;
   const toCreate: Prisma.MatchEventCreateManyInput[] = [];
 
   for (const event of incoming) {
@@ -257,10 +273,8 @@ matchesRouter.post("/:id/events", async (req, res) => {
       throw new HttpError(409, `事件序號不連續（期望 ${maxSeq + 1}，收到 ${event.seq}）`);
     }
     if (kind === "duplicate") {
-      const existing = await prisma.matchEvent.findUnique({
-        where: { matchId_seq: { matchId: match.id, seq: event.seq } },
-      });
-      if (existing && JSON.stringify(existing.action) !== JSON.stringify(event.action)) {
+      const existing = bySeq.get(event.seq);
+      if (!existing || !isAction(existing.action) || !actionsEqual(existing.action, event.action)) {
         throw new HttpError(409, `事件 ${event.seq} 已存在且內容不同`);
       }
       continue;
@@ -279,7 +293,49 @@ matchesRouter.post("/:id/events", async (req, res) => {
   }
 
   if (toCreate.length > 0) {
-    await prisma.matchEvent.createMany({ data: toCreate });
+    if (match.playerCount !== 3 && match.playerCount !== 4 && match.playerCount !== 5) {
+      throw new HttpError(400, "對局人數無效");
+    }
+    if (match.difficulty !== "balanced" && match.difficulty !== "aggressive") {
+      throw new HttpError(400, "對局難度無效");
+    }
+    const existingActions = stored.map((event) => {
+      if (!isAction(event.action)) {
+        throw new HttpError(409, `事件 ${event.seq} 無法重放`);
+      }
+      return event.action;
+    });
+    const replayed = replayToState({
+      playerCount: match.playerCount,
+      difficulty: match.difficulty,
+      seed: match.seed,
+      humanName: match.humanName,
+      actions: existingActions,
+    });
+    if (!replayed.ok) {
+      throw new HttpError(409, replayed.message);
+    }
+    let state = replayed.state;
+    for (const event of toCreate) {
+      if (!isAction(event.action)) {
+        throw new HttpError(400, `事件 ${event.seq} 的 action 無效`);
+      }
+      try {
+        state = applyAction(state, event.action);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "無法套用";
+        throw new HttpError(400, `事件 ${event.seq} 無法套用：${message}`);
+      }
+    }
+
+    try {
+      await prisma.matchEvent.createMany({ data: toCreate });
+    } catch (err) {
+      if (err && typeof err === "object" && "code" in err && err.code === "P2002") {
+        throw new HttpError(409, "事件序號衝突，請重試");
+      }
+      throw err;
+    }
   }
 
   res.json({ appended: toCreate.length, eventCount: maxSeq });
@@ -355,9 +411,6 @@ matchesRouter.post("/:id/finish", async (req, res) => {
   }
 
   const now = new Date();
-  const human = replayed.scores.find((s) => s.playerId === "p0");
-  const winner = replayed.scores[0];
-  const humanWon = Boolean(human && winner && human.playerId === winner.playerId);
 
   await prisma.$transaction(async (tx) => {
     const claimed = await tx.match.updateMany({
@@ -383,26 +436,8 @@ matchesRouter.post("/:id/finish", async (req, res) => {
     }
 
     const userId = match.participants.find((p) => p.isHuman)?.userId;
-    if (userId && human) {
-      const existing = await tx.userStats.findUnique({ where: { userId } });
-      await tx.userStats.upsert({
-        where: { userId },
-        create: {
-          userId,
-          gamesPlayed: 1,
-          gamesWon: humanWon ? 1 : 0,
-          totalScore: human.total,
-          bestScore: human.total,
-          lastPlayedAt: now,
-        },
-        update: {
-          gamesPlayed: { increment: 1 },
-          gamesWon: { increment: humanWon ? 1 : 0 },
-          totalScore: { increment: human.total },
-          bestScore: Math.max(existing?.bestScore ?? 0, human.total),
-          lastPlayedAt: now,
-        },
-      });
+    if (userId) {
+      await refreshUserStats(tx, userId);
     }
   });
 

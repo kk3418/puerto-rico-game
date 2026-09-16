@@ -8,7 +8,7 @@ import {
   scoreGame,
   type Action,
 } from "../../../src/engine";
-import { isSupportedSaveSchema, replayMatch, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
+import { isAction, applyNextActions, isSupportedSaveSchema, replayMatch, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
 
 async function recordGame(seed: number): Promise<{ actions: Action[]; scores: ReturnType<typeof scoreGame> }> {
   let state = createInitialState({
@@ -125,5 +125,24 @@ describe("replayMatch", () => {
   it("accepts the current save schema and rejects an unknown major", () => {
     expect(isSupportedSaveSchema(SAVE_SCHEMA_VERSION)).toBe(true);
     expect(isSupportedSaveSchema("2.0")).toBe(false);
+  });
+});
+
+describe("isAction", () => {
+  it("rejects objects that are not engine actions", () => {
+    expect(isAction({ type: "mayorDone" })).toBe(true);
+    expect(isAction({ type: "not-a-move" })).toBe(false);
+    expect(isAction({ foo: 1 })).toBe(false);
+
+    const start = createInitialState({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 1,
+      humanName: "你",
+      governorIndex: 0,
+    });
+    const illegal = applyNextActions(start, [{ type: "mayorDone" }]);
+    expect(illegal.ok).toBe(false);
+    if (!illegal.ok) expect(illegal.reason).toBe("illegal");
   });
 });

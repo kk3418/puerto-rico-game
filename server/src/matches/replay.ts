@@ -9,8 +9,29 @@ import {
   type ScoreBreakdown,
 } from "../../../src/engine";
 
+const ACTION_TYPES = new Set<Action["type"]>([
+  "chooseRole",
+  "settlerHacienda",
+  "settlerTake",
+  "mayorPlace",
+  "mayorRemove",
+  "mayorDone",
+  "builderBuild",
+  "craftsmanExtra",
+  "traderSell",
+  "captainLoad",
+  "captainPass",
+  "captainStore",
+]);
+
 export function isAction(value: unknown): value is Action {
-  return Boolean(value && typeof value === "object" && "type" in value && typeof (value as { type: unknown }).type === "string");
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "type" in value &&
+      typeof (value as { type: unknown }).type === "string" &&
+      ACTION_TYPES.has((value as { type: string }).type as Action["type"]),
+  );
 }
 
 export type ReplayOk = {
@@ -38,6 +59,19 @@ export type LiveReplayFail = {
   message: string;
 };
 
+export function applyNextActions(state: GameState, actions: Action[]): LiveReplayOk | LiveReplayFail {
+  try {
+    let current = state;
+    for (const action of actions) {
+      current = applyAction(current, action);
+    }
+    return { ok: true, state: current };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "重放失敗";
+    return { ok: false, reason: "illegal", message };
+  }
+}
+
 export function replayToState(input: {
   playerCount: PlayerCount;
   difficulty: Difficulty;
@@ -45,23 +79,13 @@ export function replayToState(input: {
   humanName: string;
   actions: Action[];
 }): LiveReplayOk | LiveReplayFail {
-  let state = createInitialState({
+  const start = createInitialState({
     playerCount: input.playerCount,
     difficulty: input.difficulty,
     seed: input.seed,
     humanName: input.humanName,
   });
-
-  try {
-    for (const action of input.actions) {
-      state = applyAction(state, action);
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "重放失敗";
-    return { ok: false, reason: "illegal", message };
-  }
-
-  return { ok: true, state };
+  return applyNextActions(start, input.actions);
 }
 
 export function replayMatch(input: {

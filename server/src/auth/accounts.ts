@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { refreshUserStats } from "../matches/stats";
 
 export type AuthProvider = "google" | "github";
 
@@ -106,10 +107,13 @@ export async function findOrCreateUser(
   });
 
   if (claimGuestId) {
-    await prisma.matchParticipant.updateMany({
+    const claimed = await prisma.matchParticipant.updateMany({
       where: { guestId: claimGuestId, userId: null },
       data: { userId: user.id },
     });
+    if (claimed.count > 0) {
+      await refreshUserStats(prisma, user.id);
+    }
   }
 
   return user;
