@@ -46,6 +46,10 @@
   gap: 0.8rem;
 }
 
+.table-actions .text-btn {
+  text-decoration: none;
+}
+
 .save-note {
   margin: 0.8rem 0 0;
   font-size: 0.85rem;
