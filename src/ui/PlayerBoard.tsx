@@ -53,18 +53,17 @@ export function PlayerBoard({
           {player.unplacedColonists > 0 && <span className="status-note">待安置 {player.unplacedColonists}</span>}
           {player.sanJuan > 0 && <span className="status-note">聖胡安 {player.sanJuan}</span>}
         </div>
+        <div
+          className={`role-seat ${chosenRole ? "occupied" : ""} ${isActiveRoleOwner ? "active" : ""}`}
+          aria-label={chosenRole ? `本輪角色：${ROLE_ZH[chosenRole]}` : "本輪角色"}
+        >
+          {chosenRole ? (
+            <><GameIcon kind={chosenRole} size={22} /><span>{ROLE_ZH[chosenRole]}</span></>
+          ) : (
+            <span>角色位</span>
+          )}
+        </div>
       </header>
-
-      <div
-        className={`role-seat ${chosenRole ? "occupied" : ""} ${isActiveRoleOwner ? "active" : ""}`}
-        aria-label={chosenRole ? `本輪角色：${ROLE_ZH[chosenRole]}` : "本輪角色"}
-      >
-        {chosenRole ? (
-          <><GameIcon kind={chosenRole} size={32} /><span>{ROLE_ZH[chosenRole]}</span></>
-        ) : (
-          <span>角色位</span>
-        )}
-      </div>
 
       <section className="player-zone city-zone">
         <h3>建築物區</h3>

@@ -411,10 +411,8 @@
 .player-status {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
   align-items: center;
-  gap: 0.35rem 0.7rem;
-  padding-right: 5.2rem;
+  gap: 0.35rem 0.55rem;
 }
 
 .player-status h2 {
@@ -422,6 +420,7 @@
   align-items: center;
   gap: 0.32rem;
   margin: 0;
+  min-width: 0;
 }
 
 .governor-mark {
@@ -457,6 +456,7 @@
   gap: 0.3rem 0.65rem;
   font-size: 0.86rem;
   font-weight: 800;
+  min-width: 0;
 }
 
 .status-note {
@@ -468,9 +468,8 @@
 }
 
 .role-seat {
-  position: absolute;
-  top: 0.45rem;
-  right: 0.5rem;
+  flex: 0 0 auto;
+  margin-left: auto;
   min-width: 4.6rem;
   min-height: 2.25rem;
   display: flex;
@@ -850,10 +849,4 @@ p.log {
   .market-row { grid-template-columns: 1fr; }
   .market-row-label { flex-direction: row; width: fit-content; }
   .market-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .player-status { padding-right: 0; }
-  .role-seat {
-    position: static;
-    width: fit-content;
-    margin-top: 0.4rem;
-  }
 }
