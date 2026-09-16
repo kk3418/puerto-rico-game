@@ -61,8 +61,7 @@
   align-items: start;
 }
 
-.arena-board,
-.arena-log {
+.arena-board {
   grid-column: 1 / -1;
 }
 
@@ -81,12 +80,10 @@
 .arena-board { order: 1; }
 .self-seat { order: 3; }
 .player-seat:not(.self-seat) { order: 4; }
-.arena-log { order: 5; }
 
 .public-board,
 .player-board,
-.action-panel,
-.arena-log {
+.action-panel {
   border: 1px solid rgba(246, 227, 176, 0.2);
   border-radius: 0.65rem;
   background: rgba(12, 42, 45, 0.54);
@@ -107,18 +104,9 @@
   background: transparent;
   box-shadow: none;
 }
-.arena-log {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  padding: 0.7rem 0.8rem;
-}
-
 .public-board h2,
 .player-board h2,
-.action-panel h2,
-.arena-log h2 {
+.action-panel h2 {
   font-family: "Fraunces", serif;
   font-size: 1rem;
   margin: 0 0 0.45rem;
@@ -129,9 +117,49 @@
   flex: 0 1 auto;
 }
 
-.arena-log h2 {
+.arena-log-toggle {
+  font-family: "Fraunces", serif;
+  font-size: 0.95rem;
   color: var(--sand-light);
-  flex-shrink: 0;
+  background: rgba(12, 42, 45, 0.72);
+  border: 1px solid rgba(246, 227, 176, 0.35);
+  border-radius: 0.45rem;
+  padding: 0.22rem 0.65rem;
+}
+
+.arena-log-toggle::after {
+  content: " ▾";
+  font-size: 0.78em;
+}
+
+.arena-log-toggle.is-open {
+  background: rgba(246, 227, 176, 0.16);
+}
+
+.arena-log-toggle.is-open::after {
+  content: " ▴";
+}
+
+.arena-log {
+  position: fixed;
+  z-index: 90;
+  top: calc(var(--table-header-height) + 0.45rem);
+  right: clamp(0.7rem, 2vw, 1.5rem);
+  display: flex;
+  flex-direction: column;
+  width: min(22rem, calc(100vw - 1.4rem));
+  max-height: calc(100vh - var(--table-header-height) - 1rem);
+  overflow: hidden;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(246, 227, 176, 0.28);
+  border-radius: 0.65rem;
+  background: rgba(12, 42, 45, 0.96);
+  box-shadow: 0 0.7rem 1.8rem rgba(3, 18, 20, 0.45);
+  backdrop-filter: blur(12px);
+}
+
+.arena-log[hidden] {
+  display: none !important;
 }
 
 .tile-row,
@@ -642,13 +670,28 @@
 }
 
 .log {
-  max-height: 9rem;
+  max-height: none;
   min-height: 0;
+  flex: 1 1 auto;
   overflow: auto;
   margin: 0;
   padding-left: 1.1rem;
   font-size: 0.78rem;
+  line-height: 1.45;
   opacity: 0.88;
+}
+
+p.log {
+  padding-left: 0;
+}
+
+.log li + li {
+  margin-top: 0.28rem;
+}
+
+.arena-log .error {
+  flex-shrink: 0;
+  margin: 0.45rem 0 0;
 }
 
 .error { color: #ffd0c0; }
@@ -717,27 +760,23 @@
   .table-arena.seats-3 {
     grid-template-areas:
       "seat1 board self"
-      "seat2 board self"
-      "log log log";
+      "seat2 board self";
   }
 
   .table-arena.seats-4 {
     grid-template-areas:
       "seat1 board seat3"
-      "seat2 board self"
-      "log log log";
+      "seat2 board self";
   }
 
   .table-arena.seats-5 {
     grid-template-areas:
       "seat1 board seat3"
       "seat2 board self"
-      ". seat4 ."
-      "log log log";
+      ". seat4 .";
   }
 
   .arena-board { grid-area: board; }
-  .arena-log { grid-area: log; }
   .self-seat { grid-area: self; }
   .seat-1 { grid-area: seat1; }
   .seat-2 { grid-area: seat2; }
@@ -747,55 +786,10 @@
   .arena-action,
   .self-seat,
   .arena-board,
-  .arena-log,
   .player-seat { order: initial; }
 
   .supply-row {
     grid-template-columns: 1.15fr 1fr 0.65fr 0.85fr;
-  }
-}
-
-@media (min-width: 1280px) {
-  .table {
-    --table-log-width: 12.5rem;
-    padding-right: calc(var(--table-log-width) + 1.5rem);
-  }
-
-  .arena-action {
-    right: calc(var(--table-log-width) + 0.75rem);
-  }
-
-  .arena-log {
-    position: fixed;
-    z-index: 30;
-    top: calc(var(--table-header-height) + 0.75rem);
-    right: 0.75rem;
-    bottom: 0.75rem;
-    width: var(--table-log-width);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .arena-log .log {
-    max-height: none;
-    flex: 1;
-  }
-}
-
-@media (min-width: 1100px) and (max-width: 1279px) {
-  .arena-log {
-    position: sticky;
-    z-index: 25;
-    bottom: 0.6rem;
-    max-height: 8rem;
-    background: rgba(12, 42, 45, 0.94);
-    backdrop-filter: blur(10px);
-  }
-
-  .arena-log .log {
-    max-height: none;
-    flex: 1 1 auto;
   }
 }
 

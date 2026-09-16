@@ -56,6 +56,10 @@ export function GameScreen({
   const [turnSeat, setTurnSeat] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<null | "leave">(null);
+  const [logOpen, setLogOpen] = useState(false);
+  const logRef = useRef<HTMLElement>(null);
+  const logToggleRef = useRef<HTMLButtonElement>(null);
+  const logListRef = useRef<HTMLOListElement>(null);
   const [serverScores, setServerScores] = useState<ScoreBreakdown[] | null>(null);
   const [serverReason, setServerReason] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
@@ -164,6 +168,35 @@ export function GameScreen({
     };
   }, [flush, matchId, state.gameOver, state.scores]);
 
+  useEffect(() => {
+    if (!logOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setLogOpen(false);
+    }
+    function onPointer(event: PointerEvent) {
+      const target = event.target as Node;
+      if (logRef.current?.contains(target) || logToggleRef.current?.contains(target)) return;
+      setLogOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [logOpen]);
+
+  useEffect(() => {
+    if (error || syncError) setLogOpen(true);
+  }, [error, syncError]);
+
+  useEffect(() => {
+    if (!logOpen) return;
+    const list = logListRef.current;
+    if (!list) return;
+    list.scrollTop = list.scrollHeight;
+  }, [logOpen, state.log]);
+
   function onAct(action: Parameters<typeof dispatchAction>[1]) {
     try {
       humanRef.current.submit(action);
@@ -241,11 +274,40 @@ export function GameScreen({
           {pending > 0 ? " · 同步中" : ""}
         </p>
         <div className="table-actions">
+          <button
+            ref={logToggleRef}
+            type="button"
+            className={`arena-log-toggle${logOpen ? " is-open" : ""}`}
+            aria-expanded={logOpen}
+            aria-controls="arena-log-panel"
+            onClick={() => setLogOpen((open) => !open)}
+          >
+            航海日誌
+          </button>
           <button type="button" className="text-btn" onClick={onLeave}>
             離開
           </button>
         </div>
       </header>
+      <aside
+        ref={logRef}
+        id="arena-log-panel"
+        className="arena-log"
+        aria-label="航海日誌"
+        hidden={!logOpen}
+      >
+        {state.log.length === 0 ? (
+          <p className="log">尚無紀錄</p>
+        ) : (
+          <ol className="log" ref={logListRef}>
+            {state.log.map((e) => (
+              <li key={e.id}>{e.text}</li>
+            ))}
+          </ol>
+        )}
+        {syncError && <p className="error">{syncError}</p>}
+        {error && <p className="error">{error}</p>}
+      </aside>
       {dialog === "leave" && (
         <Dialog
           title="是否要存檔再離開嗎"
@@ -308,16 +370,6 @@ export function GameScreen({
             mayorReceived={receivedForPlayer(state, 0)}
           />
         </div>
-        <aside className="arena-log">
-          <h2>航海日誌</h2>
-          <ol className="log">
-            {state.log.slice(-8).map((e) => (
-              <li key={e.id}>{e.text}</li>
-            ))}
-          </ol>
-          {syncError && <p className="error">{syncError}</p>}
-          {error && <p className="error">{error}</p>}
-        </aside>
       </main>
     </div>
   );
