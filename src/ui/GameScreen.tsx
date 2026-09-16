@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { abandonMatch, finishMatch } from "../api/matches";
 import { clearLastMatchId } from "../api/auth";
 import { HeuristicAgent, HumanAgent, dispatchAction, type PlayerAgent } from "../agents";
@@ -145,13 +145,19 @@ export function GameScreen({
     };
   }, [difficulty, enqueue, playerCount]);
 
+  const completeFinish = useCallback(async () => {
+    await flush();
+    const result = await finishMatch(matchId);
+    if (result.verified) clearLastMatchId();
+    return result;
+  }, [flush, matchId]);
+
   useEffect(() => {
     if (!state.gameOver || !state.scores) return;
     let cancelled = false;
     setFinishing(true);
     void (async () => {
-      await flush();
-      const result = await finishMatch(matchId);
+      const result = await completeFinish();
       if (cancelled) return;
       setServerScores(result.scores);
       setServerReason(result.endReason);
@@ -166,7 +172,7 @@ export function GameScreen({
     return () => {
       cancelled = true;
     };
-  }, [flush, matchId, state.gameOver, state.scores]);
+  }, [completeFinish, state.gameOver, state.scores]);
 
   useEffect(() => {
     if (!logOpen) return;
@@ -244,13 +250,12 @@ export function GameScreen({
         onRetryFinish={() => {
           setFinishError(null);
           setFinishing(true);
-          void (async () => {
-            await flush();
-            const result = await finishMatch(matchId);
-            setServerScores(result.scores);
-            setServerReason(result.endReason);
-            setVerified(result.verified);
-          })()
+          void completeFinish()
+            .then((result) => {
+              setServerScores(result.scores);
+              setServerReason(result.endReason);
+              setVerified(result.verified);
+            })
             .catch((err: Error) => setFinishError(err.message))
             .finally(() => setFinishing(false));
         }}
