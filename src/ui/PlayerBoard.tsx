@@ -46,7 +46,11 @@ export function PlayerBoard({
         </h2>
         <div className="status-resources">
           <span className="icon-label" title="金幣"><GameIcon kind="coin" />{player.doubloons}</span>
-          {!hideVp && <span className="icon-label" title="勝利分"><GameIcon kind="vp" />{player.vpChips}</span>}
+          {hideVp ? (
+            <HiddenVpChips vp={player.vpChips} />
+          ) : (
+            <span className="icon-label" title="勝利分"><GameIcon kind="vp" />{player.vpChips}</span>
+          )}
           <span className="icon-label" title={mayorReceived === undefined ? "殖民者總數" : "本輪新增／殖民者總數"}>
             <GameIcon kind="colonist" />{mayorReceived === undefined ? colonists : `${mayorReceived}/${colonists}`}
           </span>
@@ -179,6 +183,28 @@ export function PlayerBoard({
         </section>
       )}
     </article>
+  );
+}
+
+function HiddenVpChips({ vp }: { vp: number }) {
+  const fives = Math.floor(vp / 5);
+  const ones = vp % 5;
+  if (fives === 0 && ones === 0) return null;
+  return (
+    <Tooltip content="勝利分籌碼（面朝下）" className="vp-chips">
+      {fives > 0 && (
+        <span className="vp-chip-group">
+          <GameIcon kind="vpFive" size={20} />
+          <span>×{fives}</span>
+        </span>
+      )}
+      {ones > 0 && (
+        <span className="vp-chip-group">
+          <GameIcon kind="vpOne" size={15} />
+          <span>×{ones}</span>
+        </span>
+      )}
+    </Tooltip>
   );
 }
 

@@ -285,6 +285,20 @@
   gap: 0.25rem;
 }
 
+.vp-chips {
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.vp-chip-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.08rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--sand-light);
+}
+
 .coin {
   display: flex;
   align-items: center;
