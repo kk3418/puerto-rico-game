@@ -27,17 +27,24 @@ export type ReplayFail = {
 
 export type ReplayResult = ReplayOk | ReplayFail;
 
-export function replayMatch(input: {
+export type LiveReplayOk = {
+  ok: true;
+  state: GameState;
+};
+
+export type LiveReplayFail = {
+  ok: false;
+  reason: "illegal";
+  message: string;
+};
+
+export function replayToState(input: {
   playerCount: PlayerCount;
   difficulty: Difficulty;
   seed: number;
   humanName: string;
   actions: Action[];
-}): ReplayResult {
-  if (input.actions.length === 0) {
-    return { ok: false, reason: "empty", message: "沒有可重放的事件" };
-  }
-
+}): LiveReplayOk | LiveReplayFail {
   let state = createInitialState({
     playerCount: input.playerCount,
     difficulty: input.difficulty,
@@ -54,11 +61,28 @@ export function replayMatch(input: {
     return { ok: false, reason: "illegal", message };
   }
 
-  if (!state.gameOver) {
+  return { ok: true, state };
+}
+
+export function replayMatch(input: {
+  playerCount: PlayerCount;
+  difficulty: Difficulty;
+  seed: number;
+  humanName: string;
+  actions: Action[];
+}): ReplayResult {
+  if (input.actions.length === 0) {
+    return { ok: false, reason: "empty", message: "沒有可重放的事件" };
+  }
+
+  const replayed = replayToState(input);
+  if (!replayed.ok) return replayed;
+
+  if (!replayed.state.gameOver) {
     return { ok: false, reason: "not-over", message: "重放後對局尚未結束" };
   }
 
-  return { ok: true, state, scores: scoreGame(state) };
+  return { ok: true, state: replayed.state, scores: scoreGame(replayed.state) };
 }
 
 export const SAVE_SCHEMA_VERSION = "1.0";

@@ -32,7 +32,7 @@ export function StatsPanel({
 
   if (!authenticated) return null;
 
-  const resumable = matches.find((m) => m.status === "playing" && m.hasSave);
+  const resumable = matches.find((m) => m.status === "playing");
 
   return (
     <section className="stats-panel">

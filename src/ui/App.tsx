@@ -7,7 +7,8 @@ import {
   writeLastMatchId,
   writeStoredNickname,
 } from "../api/auth";
-import { createMatch, getMatch, getMatchSave } from "../api/matches";
+import { ApiError } from "../api/client";
+import { createMatch, getMatchState } from "../api/matches";
 import type { AuthMe, MatchSummary } from "../api/types";
 import type { Difficulty, GameState, PlayerCount } from "../engine";
 import { GameScreen } from "./GameScreen";
@@ -28,6 +29,7 @@ export function App() {
   const [auth, setAuth] = useState<AuthMe | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [booting, setBooting] = useState(true);
   const [play, setPlay] = useState<PlaySession | null>(null);
 
   const refreshAuth = useCallback(async () => {
@@ -39,58 +41,87 @@ export function App() {
     return me;
   }, []);
 
+  const enterMatch = useCallback((match: MatchSummary, state?: GameState) => {
+    writeLastMatchId(match.id);
+    setPlay({
+      matchId: match.id,
+      playerCount: match.playerCount,
+      difficulty: match.difficulty,
+      seed: match.seed,
+      nickname: match.humanName,
+      initialState: state,
+      nextSeq: match.eventCount + 1,
+      nonce: Date.now(),
+    });
+  }, []);
+
+  const resumeLiveMatch = useCallback(
+    async (id: string) => {
+      const live = await getMatchState(id);
+      enterMatch(live, live.state);
+      return live;
+    },
+    [enterMatch],
+  );
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("authError")) {
       setAuthError("第三方登入失敗");
       window.history.replaceState({}, "", window.location.pathname);
     }
-    void refreshAuth().catch((err: Error) => {
-      setBootError(err.message || "無法連線伺服器");
-    });
-  }, [refreshAuth]);
+    void (async () => {
+      await refreshAuth();
+      const id = readLastMatchId();
+      if (!id) return;
+      try {
+        await resumeLiveMatch(id);
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 403 || err.status === 404 || err.status === 409)) {
+          clearLastMatchId();
+        }
+      }
+    })()
+      .catch((err: Error) => {
+        setBootError(err.message || "無法連線伺服器");
+      })
+      .finally(() => {
+        setBooting(false);
+      });
+  }, [refreshAuth, resumeLiveMatch]);
 
   async function startNew(playerCount: PlayerCount, difficulty: Difficulty, nickname: string) {
     writeStoredNickname(nickname);
     await createGuest(nickname);
     const seed = Date.now() & 0x7fffffff;
     const match = await createMatch({ nickname, playerCount, difficulty, seed });
-    writeLastMatchId(match.id);
-    setPlay({
-      matchId: match.id,
-      playerCount: match.playerCount,
-      difficulty: match.difficulty,
-      seed: match.seed,
-      nickname: match.humanName,
-      nextSeq: 1,
-      nonce: Date.now(),
-    });
+    enterMatch(match);
   }
 
   async function continueMatch(match: MatchSummary) {
-    const save = await getMatchSave(match.id);
-    writeLastMatchId(match.id);
-    setPlay({
-      matchId: match.id,
-      playerCount: match.playerCount,
-      difficulty: match.difficulty,
-      seed: match.seed,
-      nickname: match.humanName,
-      initialState: save.state,
-      nextSeq: match.eventCount + 1,
-      nonce: Date.now(),
-    });
+    await resumeLiveMatch(match.id);
   }
 
   async function continueLast() {
     const id = readLastMatchId();
     if (!id) return;
-    const match = await getMatch(id);
-    if (match.status !== "playing" || !match.hasSave) {
+    try {
+      await resumeLiveMatch(id);
+    } catch (err) {
       clearLastMatchId();
-      throw new Error("沒有可繼續的存檔");
+      throw err instanceof Error ? err : new Error("沒有可繼續的對局");
     }
-    await continueMatch(match);
+  }
+
+  if (booting) {
+    return (
+      <div className="setup">
+        <main className="setup-main">
+          <p className="brand">Puerto Rico</p>
+          <p>載入中…</p>
+        </main>
+      </div>
+    );
   }
 
   if (!play) {

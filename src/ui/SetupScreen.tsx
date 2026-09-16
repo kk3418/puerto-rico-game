@@ -115,7 +115,7 @@ export function SetupScreen({
               disabled={busy || !ready}
               onClick={() => void run(onContinueLast)}
             >
-              讀取本機上一局存檔
+              繼續上一局
             </button>
           )}
         </div>

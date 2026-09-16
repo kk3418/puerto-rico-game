@@ -1,6 +1,6 @@
 import { api } from "./client";
 import type { GameState } from "../engine";
-import type { CreateMatchInput, FinishResult, MatchEventInput, MatchSave, MatchSummary, UserStats } from "./types";
+import type { CreateMatchInput, FinishResult, MatchEventInput, MatchLiveState, MatchSave, MatchSummary, UserStats } from "./types";
 
 export function createMatch(input: CreateMatchInput): Promise<MatchSummary> {
   return api<MatchSummary>("/matches", {
@@ -11,6 +11,10 @@ export function createMatch(input: CreateMatchInput): Promise<MatchSummary> {
 
 export function getMatch(id: string): Promise<MatchSummary> {
   return api<MatchSummary>(`/matches/${id}`);
+}
+
+export function getMatchState(id: string): Promise<MatchLiveState> {
+  return api<MatchLiveState>(`/matches/${id}/state`);
 }
 
 export function postMatchEvents(

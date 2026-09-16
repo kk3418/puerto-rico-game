@@ -80,6 +80,10 @@ export type MatchEventInput = {
   action: unknown;
 };
 
+export type MatchLiveState = MatchSummary & {
+  state: GameState;
+};
+
 export type MatchSave = {
   matchId: string;
   schemaVersion: string;

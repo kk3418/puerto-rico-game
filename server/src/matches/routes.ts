@@ -6,7 +6,7 @@ import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, requireUser } from "../identity";
 import { canAccessMatch } from "./access";
-import { isAction, isSupportedSaveSchema, replayMatch, SAVE_SCHEMA_VERSION } from "./replay";
+import { isAction, isSupportedSaveSchema, replayMatch, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
 import { classifySeq } from "./seq";
 
 const AI_NAMES = ["伊莎貝拉", "迭戈", "卡塔莉娜", "羅倫佐"];
@@ -192,6 +192,50 @@ matchesRouter.get("/:id", async (req, res) => {
   const identity = requireIdentity(req);
   const match = await loadOwnedMatch(matchIdParam(req), identity);
   res.json(matchSummary(match));
+});
+
+matchesRouter.get("/:id/state", async (req, res) => {
+  const identity = requireIdentity(req);
+  const match = await loadOwnedMatch(matchIdParam(req), identity);
+  if (match.status !== "playing") {
+    throw new HttpError(409, "對局已結束，無法繼續");
+  }
+  if (match.playerCount !== 3 && match.playerCount !== 4 && match.playerCount !== 5) {
+    throw new HttpError(400, "對局人數無效");
+  }
+  if (match.difficulty !== "balanced" && match.difficulty !== "aggressive") {
+    throw new HttpError(400, "對局難度無效");
+  }
+
+  const events = await prisma.matchEvent.findMany({
+    where: { matchId: match.id },
+    orderBy: { seq: "asc" },
+  });
+  if (events.length !== match._count.events) {
+    throw new HttpError(409, "事件序號不完整");
+  }
+  const actions = events.map((event, index) => {
+    if (event.seq !== index + 1) {
+      throw new HttpError(409, "事件序號不完整");
+    }
+    if (!isAction(event.action)) {
+      throw new HttpError(400, `事件 ${event.seq} 無法重放`);
+    }
+    return event.action;
+  });
+
+  const replayed = replayToState({
+    playerCount: match.playerCount,
+    difficulty: match.difficulty,
+    seed: match.seed,
+    humanName: match.humanName,
+    actions,
+  });
+  if (!replayed.ok) {
+    throw new HttpError(400, replayed.message);
+  }
+
+  res.json({ ...matchSummary(match), state: replayed.state });
 });
 
 matchesRouter.post("/:id/events", async (req, res) => {

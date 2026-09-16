@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { abandonMatch, finishMatch, putMatchSave } from "../api/matches";
+import { abandonMatch, finishMatch } from "../api/matches";
+import { clearLastMatchId } from "../api/auth";
 import { HeuristicAgent, HumanAgent, dispatchAction, type PlayerAgent } from "../agents";
 import {
   chosenRoleFor,
@@ -54,9 +55,7 @@ export function GameScreen({
   const [awaitingHuman, setAwaitingHuman] = useState(false);
   const [turnSeat, setTurnSeat] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<null | "leave" | "afterSave">(null);
+  const [dialog, setDialog] = useState<null | "leave">(null);
   const [serverScores, setServerScores] = useState<ScoreBreakdown[] | null>(null);
   const [serverReason, setServerReason] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
@@ -173,42 +172,30 @@ export function GameScreen({
     }
   }
 
-  async function onSave() {
-    setSaving(true);
-    setError(null);
-    try {
-      await flush();
-      const saved = await putMatchSave(matchId, stateRef.current);
-      setSavedAt(saved.savedAt);
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "存檔失敗");
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function onSaveClick() {
-    if (await onSave()) setDialog("afterSave");
-  }
-
   function onLeave() {
     setDialog("leave");
   }
 
-  async function onLeaveYes() {
-    if (await onSave()) onExit();
+  async function onLeaveKeep() {
+    try {
+      await flush();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "離開失敗");
+      return;
+    }
+    onExit();
   }
 
-  async function onLeaveNo() {
+  async function onLeaveAbandon() {
     try {
       await flush();
       if (!stateRef.current.gameOver) {
         await abandonMatch(matchId);
       }
+      clearLastMatchId();
     } catch (err) {
       setError(err instanceof Error ? err.message : "離開失敗");
+      return;
     }
     onExit();
   }
@@ -252,12 +239,8 @@ export function GameScreen({
           第 {state.round} 輪 · 總督 {state.players[state.governorIndex]?.name}
           {state.endTriggered ? " · 終局已觸發" : ""}
           {pending > 0 ? " · 同步中" : ""}
-          {savedAt ? " · 已存檔" : ""}
         </p>
         <div className="table-actions">
-          <button type="button" className="text-btn" disabled={saving} onClick={() => void onSaveClick()}>
-            {saving ? "存檔中…" : "存檔"}
-          </button>
           <button type="button" className="text-btn" onClick={onLeave}>
             離開
           </button>
@@ -265,36 +248,22 @@ export function GameScreen({
       </header>
       {dialog === "leave" && (
         <Dialog
-          title="是否要存檔再離開？"
+          title="是否要存檔再離開嗎"
           showClose
           onClose={() => setDialog(null)}
           actions={
             <>
-              <button type="button" className="text-btn" onClick={() => void onLeaveNo()}>
+              <button type="button" className="text-btn" onClick={() => void onLeaveAbandon()}>
                 否
               </button>
-              <button type="button" className="text-btn" onClick={() => void onLeaveYes()}>
+              <button type="button" className="text-btn" onClick={() => void onLeaveKeep()}>
                 是
               </button>
             </>
           }
-        />
-      )}
-      {dialog === "afterSave" && (
-        <Dialog
-          title="是否要離開？"
-          showClose={false}
-          actions={
-            <>
-              <button type="button" className="text-btn" onClick={() => setDialog(null)}>
-                否
-              </button>
-              <button type="button" className="text-btn" onClick={onExit}>
-                是
-              </button>
-            </>
-          }
-        />
+        >
+          <p>按「否」會放棄本局，進度將無法繼續。</p>
+        </Dialog>
       )}
 
       <main className={`table-arena seats-${state.players.length}`}>
@@ -346,7 +315,6 @@ export function GameScreen({
               <li key={e.id}>{e.text}</li>
             ))}
           </ol>
-          <p className="save-note">存檔僅供單人續玩。之後多人對局需全體同意才能存檔。</p>
           {syncError && <p className="error">{syncError}</p>}
           {error && <p className="error">{error}</p>}
         </aside>

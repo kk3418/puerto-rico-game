@@ -8,7 +8,7 @@ import {
   scoreGame,
   type Action,
 } from "../../../src/engine";
-import { isSupportedSaveSchema, replayMatch, SAVE_SCHEMA_VERSION } from "./replay";
+import { isSupportedSaveSchema, replayMatch, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
 
 async function recordGame(seed: number): Promise<{ actions: Action[]; scores: ReturnType<typeof scoreGame> }> {
   let state = createInitialState({
@@ -50,6 +50,39 @@ describe("replayMatch", () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("empty");
+  });
+
+  it("replays an in-progress match for resume without requiring a save", () => {
+    const start = createInitialState({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 1,
+      humanName: "你",
+      governorIndex: 0,
+    });
+    const first = getLegalActions(start)[0]!;
+    const none = replayToState({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 1,
+      humanName: "你",
+      actions: [],
+    });
+    expect(none.ok).toBe(true);
+    if (!none.ok) return;
+    expect(none.state.round).toBe(start.round);
+
+    const result = replayToState({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 1,
+      humanName: "你",
+      actions: [first],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.gameOver).toBe(false);
+    expect(result.state.log.length).toBeGreaterThan(start.log.length);
   });
 
   it("rejects a game that has not ended", () => {
