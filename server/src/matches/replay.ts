@@ -9,6 +9,7 @@ import {
   type PlayerCount,
   type ScoreBreakdown,
 } from "../../../src/engine";
+import { replayCache, type ReplayCache } from "./replayCache";
 
 const ACTION_TYPES = new Set<Action["type"]>([
   "chooseRole",
@@ -105,18 +106,39 @@ export function replayToState(input: {
   return applyNextActions(start, input.actions);
 }
 
+export function replayStoredActions(
+  input: {
+    matchId: string;
+    playerCount: PlayerCount;
+    difficulty: Difficulty;
+    seed: number;
+    humanName: string;
+    actions: Action[];
+  },
+  cache: ReplayCache = replayCache,
+): LiveReplayOk | LiveReplayFail {
+  const hit = cache.read(input.matchId, input.actions.length);
+  if (hit) return { ok: true, state: hit };
+  const replayed = replayToState(input);
+  if (replayed.ok) cache.write(input.matchId, input.actions.length, replayed.state);
+  return replayed;
+}
+
 export function replayMatch(input: {
+  matchId?: string;
   playerCount: PlayerCount;
   difficulty: Difficulty;
   seed: number;
   humanName: string;
   actions: Action[];
-}): ReplayResult {
+}, cache: ReplayCache = replayCache): ReplayResult {
   if (input.actions.length === 0) {
     return { ok: false, reason: "empty", message: "沒有可重放的事件" };
   }
 
-  const replayed = replayToState(input);
+  const replayed = input.matchId
+    ? replayStoredActions({ ...input, matchId: input.matchId }, cache)
+    : replayToState(input);
   if (!replayed.ok) return replayed;
 
   if (!replayed.state.gameOver) {

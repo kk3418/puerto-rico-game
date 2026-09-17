@@ -7,7 +7,8 @@ import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, requireUser } from "../identity";
 import { canAccessMatch } from "./access";
-import { describeActionContext, isAction, isSupportedSaveSchema, replayMatch, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
+import { describeActionContext, isAction, isSupportedSaveSchema, replayMatch, replayStoredActions, SAVE_SCHEMA_VERSION } from "./replay";
+import { replayCache } from "./replayCache";
 import { classifySeq } from "./seq";
 import { refreshUserStats } from "./stats";
 
@@ -230,7 +231,8 @@ matchesRouter.get("/:id/state", async (req, res) => {
     return event.action;
   });
 
-  const replayed = replayToState({
+  const replayed = replayStoredActions({
+    matchId: match.id,
     playerCount: match.playerCount,
     difficulty: match.difficulty,
     seed: match.seed,
@@ -301,7 +303,8 @@ matchesRouter.post("/:id/events", async (req, res) => {
       }
       return event.action;
     });
-    const replayed = replayToState({
+    const replayed = replayStoredActions({
+      matchId: match.id,
       playerCount: match.playerCount,
       difficulty: match.difficulty,
       seed: match.seed,
@@ -344,6 +347,7 @@ matchesRouter.post("/:id/events", async (req, res) => {
       }
       throw err;
     }
+    replayCache.write(match.id, maxSeq, state);
   }
 
   res.json({ appended: toCreate.length, eventCount: maxSeq });
@@ -409,6 +413,7 @@ matchesRouter.post("/:id/finish", async (req, res) => {
   }
 
   const replayed = replayMatch({
+    matchId: match.id,
     playerCount: match.playerCount,
     difficulty: match.difficulty,
     seed: match.seed,
@@ -450,6 +455,8 @@ matchesRouter.post("/:id/finish", async (req, res) => {
     }
   });
 
+  replayCache.drop(match.id);
+
   const updated = await loadOwnedMatch(match.id, identity);
   res.json({
     ...matchSummary(updated),
@@ -470,6 +477,7 @@ matchesRouter.post("/:id/abandon", async (req, res) => {
       data: { status: "abandoned", endedAt: new Date(), verified: false },
     });
   }
+  replayCache.drop(match.id);
   const updated = await loadOwnedMatch(match.id, identity);
   res.json(matchSummary(updated));
 });

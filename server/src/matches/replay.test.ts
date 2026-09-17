@@ -8,7 +8,8 @@ import {
   scoreGame,
   type Action,
 } from "../../../src/engine";
-import { isAction, applyNextActions, describeActionContext, isSupportedSaveSchema, replayMatch, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
+import { isAction, applyNextActions, describeActionContext, isSupportedSaveSchema, replayMatch, replayStoredActions, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
+import { createReplayCache } from "./replayCache";
 
 async function recordGame(seed: number): Promise<{ actions: Action[]; scores: ReturnType<typeof scoreGame> }> {
   let state = createInitialState({
@@ -153,6 +154,33 @@ describe("describeActionContext", () => {
     expect(next?.phaseType).toBe(after.phase.type);
     expect(next?.activeRole).toBe(after.activeRole);
     expect(next?.round).toBe(after.round);
+  });
+});
+
+describe("replayStoredActions", () => {
+  it("applies new actions onto a cached prefix", () => {
+    const cache = createReplayCache();
+    const input = {
+      playerCount: 3 as const,
+      difficulty: "balanced" as const,
+      seed: 1,
+      humanName: "你",
+    };
+    const start = createInitialState(input);
+    const first = getLegalActions(start)[0]!;
+    const mid = applyAction(start, first);
+    cache.write("m1", 1, mid);
+
+    const prefix = replayStoredActions({ matchId: "m1", ...input, actions: [first] }, cache);
+    expect(prefix.ok).toBe(true);
+    if (!prefix.ok) return;
+    const second = getLegalActions(prefix.state)[0]!;
+    const delta = applyNextActions(prefix.state, [second]);
+    const full = replayToState({ ...input, actions: [first, second] });
+    expect(delta.ok).toBe(true);
+    expect(full.ok).toBe(true);
+    if (!delta.ok || !full.ok) return;
+    expect(delta.state).toEqual(full.state);
   });
 });
 

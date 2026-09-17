@@ -16,6 +16,7 @@ import type { MatchEventInput } from "../../../src/api/types";
 import { createApp } from "../app";
 import { prisma } from "../db";
 import { env } from "../env";
+import { replayCache } from "../matches/replayCache";
 
 export type TestAgent = ReturnType<typeof request.agent>;
 
@@ -57,6 +58,7 @@ export async function prepareIntegrationDb(): Promise<boolean> {
 }
 
 export async function resetIntegrationDb(): Promise<void> {
+  replayCache.clear();
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
       "MatchEvent",
