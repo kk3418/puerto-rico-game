@@ -1,6 +1,7 @@
 import {
   applyAction,
   createInitialState,
+  getActorIndex,
   scoreGame,
   type Action,
   type Difficulty,
@@ -58,6 +59,22 @@ export type LiveReplayFail = {
   reason: "illegal";
   message: string;
 };
+
+export function describeActionContext(state: GameState): {
+  round: number;
+  phaseType: string;
+  activeRole: string | null;
+  actorSeatIndex: number;
+} | null {
+  const actorSeatIndex = getActorIndex(state);
+  if (actorSeatIndex === null) return null;
+  return {
+    round: state.round,
+    phaseType: state.phase.type,
+    activeRole: state.activeRole,
+    actorSeatIndex,
+  };
+}
 
 export function applyNextActions(state: GameState, actions: Action[]): LiveReplayOk | LiveReplayFail {
   try {

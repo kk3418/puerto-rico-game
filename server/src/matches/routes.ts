@@ -2,12 +2,12 @@ import { Prisma } from "@prisma/client";
 import type { Request } from "express";
 import { Router } from "express";
 import { z } from "zod";
-import { actionsEqual, applyAction } from "../../../src/engine";
+import { actionsEqual, applyAction, type Action } from "../../../src/engine";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, requireUser } from "../identity";
 import { canAccessMatch } from "./access";
-import { isAction, isSupportedSaveSchema, replayMatch, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
+import { describeActionContext, isAction, isSupportedSaveSchema, replayMatch, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
 import { classifySeq } from "./seq";
 import { refreshUserStats } from "./stats";
 
@@ -19,12 +19,12 @@ const difficultySchema = z.enum(["balanced", "aggressive"]);
 
 const eventSchema = z.object({
   seq: z.number().int().positive(),
-  round: z.number().int().positive(),
+  action: z.unknown(),
+  round: z.number().int().positive().optional(),
   phaseType: z.string().optional(),
   activeRole: z.string().nullable().optional(),
-  actorSeatIndex: z.number().int().min(0),
+  actorSeatIndex: z.number().int().min(0).optional(),
   actorUserId: z.string().optional(),
-  action: z.unknown(),
 });
 
 function assertPlaying(status: string): void {
@@ -262,7 +262,7 @@ matchesRouter.post("/:id/events", async (req, res) => {
 
   const bySeq = new Map(stored.map((event) => [event.seq, event]));
   let maxSeq = stored.length;
-  const toCreate: Prisma.MatchEventCreateManyInput[] = [];
+  const accepted: Array<{ seq: number; action: Action }> = [];
 
   for (const event of incoming) {
     if (!isAction(event.action)) {
@@ -279,20 +279,12 @@ matchesRouter.post("/:id/events", async (req, res) => {
       }
       continue;
     }
-    toCreate.push({
-      matchId: match.id,
-      seq: event.seq,
-      round: event.round,
-      phaseType: event.phaseType ?? null,
-      activeRole: event.activeRole ?? null,
-      actorSeatIndex: event.actorSeatIndex,
-      actorUserId: event.actorUserId ?? identity.userId ?? null,
-      action: event.action as Prisma.InputJsonValue,
-    });
+    accepted.push({ seq: event.seq, action: event.action });
     maxSeq = event.seq;
   }
 
-  if (toCreate.length > 0) {
+  const toCreate: Prisma.MatchEventCreateManyInput[] = [];
+  if (accepted.length > 0) {
     if (match.playerCount !== 3 && match.playerCount !== 4 && match.playerCount !== 5) {
       throw new HttpError(400, "對局人數無效");
     }
@@ -316,9 +308,10 @@ matchesRouter.post("/:id/events", async (req, res) => {
       throw new HttpError(409, replayed.message);
     }
     let state = replayed.state;
-    for (const event of toCreate) {
-      if (!isAction(event.action)) {
-        throw new HttpError(400, `事件 ${event.seq} 的 action 無效`);
+    for (const event of accepted) {
+      const meta = describeActionContext(state);
+      if (!meta) {
+        throw new HttpError(400, `事件 ${event.seq} 無法對應行動者`);
       }
       try {
         state = applyAction(state, event.action);
@@ -326,6 +319,17 @@ matchesRouter.post("/:id/events", async (req, res) => {
         const message = err instanceof Error ? err.message : "無法套用";
         throw new HttpError(400, `事件 ${event.seq} 無法套用：${message}`);
       }
+      const actor = match.participants.find((p) => p.seatIndex === meta.actorSeatIndex);
+      toCreate.push({
+        matchId: match.id,
+        seq: event.seq,
+        round: meta.round,
+        phaseType: meta.phaseType,
+        activeRole: meta.activeRole,
+        actorSeatIndex: meta.actorSeatIndex,
+        actorUserId: actor?.userId ?? null,
+        action: event.action as Prisma.InputJsonValue,
+      });
     }
 
     try {

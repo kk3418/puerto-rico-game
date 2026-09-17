@@ -1,6 +1,8 @@
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { createInitialState } from "../../src/engine";
 import { findOrCreateUser } from "./auth/accounts";
 import { prisma } from "./db";
+import { describeActionContext } from "./matches/replay";
 import {
   createGuestMatch,
   firstLegalAction,
@@ -60,7 +62,19 @@ describe.skipIf(!ready)("HTTP integration", () => {
 
     await agent
       .post(`/api/matches/${match.id}/events`)
-      .send({ events: [openingEvent(first)] })
+      .send({
+        events: [
+          {
+            seq: 1,
+            round: 99,
+            phaseType: "captainLoad",
+            activeRole: "captain",
+            actorSeatIndex: 4,
+            actorUserId: "spoofed-user",
+            action: first,
+          },
+        ],
+      })
       .expect(200);
 
     const dup = await agent
@@ -78,6 +92,23 @@ describe.skipIf(!ready)("HTTP integration", () => {
     const live = await agent.get(`/api/matches/${match.id}/state`).expect(200);
     expect(live.body.state.gameOver).toBe(false);
     expect(live.body.eventCount).toBe(1);
+
+    const stored = await prisma.matchEvent.findFirst({ where: { matchId: match.id } });
+    const expected = describeActionContext(
+      createInitialState({
+        playerCount: 3,
+        difficulty: "balanced",
+        seed: 7,
+        humanName: nickname,
+      }),
+    );
+    expect(expected).not.toBeNull();
+    expect(stored?.round).toBe(expected!.round);
+    expect(stored?.phaseType).toBe(expected!.phaseType);
+    expect(stored?.activeRole).toBe(expected!.activeRole);
+    expect(stored?.actorSeatIndex).toBe(expected!.actorSeatIndex);
+    expect(stored?.actorSeatIndex).not.toBe(4);
+    expect(stored?.actorUserId).toBeNull();
   });
 
   it("finishes from the engine replay, not a client score, and does not double-count stats", async () => {

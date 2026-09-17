@@ -8,7 +8,7 @@ import {
   scoreGame,
   type Action,
 } from "../../../src/engine";
-import { isAction, applyNextActions, isSupportedSaveSchema, replayMatch, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
+import { isAction, applyNextActions, describeActionContext, isSupportedSaveSchema, replayMatch, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
 
 async function recordGame(seed: number): Promise<{ actions: Action[]; scores: ReturnType<typeof scoreGame> }> {
   let state = createInitialState({
@@ -125,6 +125,34 @@ describe("replayMatch", () => {
   it("accepts the current save schema and rejects an unknown major", () => {
     expect(isSupportedSaveSchema(SAVE_SCHEMA_VERSION)).toBe(true);
     expect(isSupportedSaveSchema("2.0")).toBe(false);
+  });
+});
+
+describe("describeActionContext", () => {
+  it("reads the current actor and phase from engine state", () => {
+    const start = createInitialState({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 1,
+      humanName: "你",
+      governorIndex: 0,
+    });
+    const opening = describeActionContext(start);
+    expect(opening).toEqual({
+      round: 1,
+      phaseType: "chooseRole",
+      activeRole: null,
+      actorSeatIndex: 0,
+    });
+
+    const first = getLegalActions(start)[0]!;
+    const after = applyAction(start, first);
+    const next = describeActionContext(after);
+    expect(next).not.toBeNull();
+    expect(next?.actorSeatIndex).toBe(getActorIndex(after));
+    expect(next?.phaseType).toBe(after.phase.type);
+    expect(next?.activeRole).toBe(after.activeRole);
+    expect(next?.round).toBe(after.round);
   });
 });
 
