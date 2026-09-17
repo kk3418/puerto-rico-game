@@ -139,6 +139,12 @@ describe.skipIf(!ready)("HTTP integration", () => {
     expect(second.status).toBe(200);
     expect(first.body.verified).toBe(true);
     expect(first.body.scores.map((s: { total: number }) => s.total)).toEqual(recorded.scores.map((s) => s.total));
+    expect(first.body.scores.map((s: { goodsAndGold: number }) => s.goodsAndGold)).toEqual(
+      recorded.scores.map((s) => s.goodsAndGold),
+    );
+
+    const human = await prisma.matchParticipant.findFirst({ where: { matchId: match.id, isHuman: true } });
+    expect(human?.goodsAndGold).toBe(recorded.scores.find((s) => s.playerId === "p0")?.goodsAndGold);
 
     const stats = await prisma.userStats.findUnique({ where: { userId: user.id } });
     expect(stats?.gamesPlayed).toBe(1);

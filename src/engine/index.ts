@@ -31,7 +31,7 @@ export {
   producedAmount,
   isLegalAction,
 } from "./helpers";
-export { scoreGame, scorePlayer, buildingPrintedVp } from "./scoring";
+export { scoreGame, scorePlayer, goodsAndGold, buildingPrintedVp } from "./scoring";
 export { cloneViaJson, assertSerializable } from "./serialize";
 export { builderCost, canBuild } from "./roles/builder";
 export { salePrice, canSell } from "./roles/trader";

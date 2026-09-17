@@ -14,6 +14,7 @@ import {
   colonistCount,
   totalColonists,
   vpChipCount,
+  scoreGame,
   scorePlayer,
   chosenRoleFor,
   type Action,
@@ -414,6 +415,19 @@ describe("end scoring", () => {
         score.customsHouse +
         score.cityHall,
     );
+  });
+
+  it("breaks victory-point ties by remaining goods and doubloons", () => {
+    const s = setup(3);
+    s.players[0]!.vpChips = 10;
+    s.players[1]!.vpChips = 10;
+    s.players[2]!.vpChips = 8;
+    s.players[0]!.doubloons = 1;
+    s.players[1]!.doubloons = 3;
+    s.players[1]!.goods.corn = 2;
+    const scores = scoreGame(s);
+    expect(scores[0]!.playerId).toBe("p1");
+    expect(scores[0]!.goodsAndGold).toBeGreaterThan(scores.find((row) => row.playerId === "p0")!.goodsAndGold);
   });
 });
 

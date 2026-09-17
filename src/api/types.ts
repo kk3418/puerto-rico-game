@@ -31,6 +31,7 @@ export type ParticipantScore = {
   customsHouse: number;
   cityHall: number;
   total: number;
+  goodsAndGold: number;
 };
 
 export type MatchSummary = {

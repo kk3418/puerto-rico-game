@@ -42,6 +42,7 @@ function scoreFields(score: {
   customsHouse: number;
   cityHall: number;
   total: number;
+  goodsAndGold: number;
 }) {
   return {
     vpChips: score.vpChips,
@@ -52,6 +53,7 @@ function scoreFields(score: {
     customsHouse: score.customsHouse,
     cityHall: score.cityHall,
     total: score.total,
+    goodsAndGold: score.goodsAndGold,
   };
 }
 
@@ -98,6 +100,7 @@ function matchSummary(match: {
     customsHouse: number | null;
     cityHall: number | null;
     total: number | null;
+    goodsAndGold: number | null;
   }>;
   save: { matchId: string } | null;
   _count: { events: number };
@@ -135,6 +138,7 @@ function matchSummary(match: {
               customsHouse: p.customsHouse ?? 0,
               cityHall: p.cityHall ?? 0,
               total: p.total,
+              goodsAndGold: p.goodsAndGold ?? 0,
             },
     })),
   };
@@ -370,6 +374,7 @@ matchesRouter.post("/:id/finish", async (req, res) => {
             customsHouse: p.customsHouse ?? 0,
             cityHall: p.cityHall ?? 0,
             total: p.total ?? 0,
+            goodsAndGold: p.goodsAndGold ?? 0,
           }),
         })),
     });

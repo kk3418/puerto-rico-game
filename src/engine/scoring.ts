@@ -64,6 +64,7 @@ export function scorePlayer(player: PlayerState): ScoreBreakdown {
     customsHouse,
     cityHall,
     total: vpChips + buildingVp + guildHall + residence + fortress + customsHouse + cityHall,
+    goodsAndGold: goodsAndGold(player),
   };
 }
 

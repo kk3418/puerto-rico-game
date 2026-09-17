@@ -6,6 +6,7 @@ export type StatsParticipant = {
   isHuman: boolean;
   userId: string | null;
   total: number | null;
+  goodsAndGold: number | null;
 };
 
 export type FinishedMatchStatsRow = {
@@ -21,12 +22,18 @@ export type AggregatedUserStats = {
   lastPlayedAt: Date | null;
 };
 
+export function outranks(a: StatsParticipant, b: StatsParticipant): boolean {
+  if (a.total == null) return false;
+  if (b.total == null) return true;
+  if (a.total !== b.total) return a.total > b.total;
+  return (a.goodsAndGold ?? 0) > (b.goodsAndGold ?? 0);
+}
+
 export function humanWonMatch(participants: StatsParticipant[], userId: string): boolean {
   const human = participants.find((p) => p.isHuman && p.userId === userId);
   if (human?.total == null) return false;
-  const humanTotal = human.total;
   const others = participants.filter((p) => p !== human);
-  return others.every((p) => (p.total ?? Number.NEGATIVE_INFINITY) < humanTotal);
+  return others.every((p) => outranks(human, p));
 }
 
 export function aggregateUserStats(matches: FinishedMatchStatsRow[], userId: string): AggregatedUserStats {
