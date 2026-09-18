@@ -99,6 +99,7 @@ export interface ScoreBreakdown {
   customsHouse: number;
   cityHall: number;
   total: number;
+  goodsAndGold: number;
 }
 
 export type Phase =

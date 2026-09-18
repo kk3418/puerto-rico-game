@@ -57,6 +57,95 @@
   color: var(--foam);
 }
 
+.auth-bar,
+.stats-panel {
+  margin-top: 1.4rem;
+  max-width: 36rem;
+}
+
+.auth-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.auth-status img {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+}
+
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+}
+
+.auth-actions p,
+.stats-panel p,
+.save-note {
+  margin: 0;
+  color: var(--foam);
+}
+
+.text-btn {
+  background: transparent;
+  border: 0;
+  color: var(--foam);
+  text-decoration: underline;
+  font-weight: 700;
+}
+
+.github-btn,
+.nick-field input {
+  border: 0;
+  background: rgba(11, 47, 54, 0.45);
+  color: var(--sand-light);
+  font-weight: 700;
+}
+
+.github-btn {
+  display: inline-block;
+  padding: 0.55rem 0.9rem;
+  text-decoration: none;
+}
+
+.nick-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+
+.nick-field span {
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sand);
+}
+
+.nick-field input {
+  min-width: 12rem;
+  padding: 0.55rem 0.7rem;
+}
+
+.stats-panel h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.15rem;
+}
+
+.match-list {
+  margin: 0.6rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.error {
+  color: #ffd0c0;
+  font-weight: 700;
+}
+
 .setup-cta {
   margin-top: 2.2rem;
   display: flex;
@@ -102,9 +191,14 @@
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.start-btn:hover {
+.start-btn:hover:not(:disabled) {
   transform: translateY(2px);
   box-shadow: 0 8px 0 var(--clay-dark);
+}
+
+.start-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 @keyframes swell {

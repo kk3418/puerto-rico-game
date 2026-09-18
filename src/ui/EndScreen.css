@@ -15,8 +15,20 @@
   font-weight: 500;
 }
 
-.end-reason {
+.end-reason,
+.end-stats,
+.verified {
   opacity: 0.85;
+}
+
+.verified {
+  color: #c8ece4;
+  font-weight: 700;
+}
+
+.end .error {
+  color: #ffd0c0;
+  font-weight: 700;
 }
 
 .end table {
@@ -31,6 +43,16 @@
   padding: 0.55rem 0.65rem;
   text-align: left;
   border-bottom: 1px solid rgba(246, 227, 176, 0.2);
+}
+
+.end .text-btn {
+  display: block;
+  margin-bottom: 0.8rem;
+  background: transparent;
+  border: 0;
+  color: var(--foam);
+  text-decoration: underline;
+  font-weight: 700;
 }
 
 .end .start-btn {

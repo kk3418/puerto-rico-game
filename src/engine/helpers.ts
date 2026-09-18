@@ -66,7 +66,19 @@ export function goodCount(player: PlayerState): number {
 }
 
 export function actionsEqual(a: Action, b: Action): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map((key) => [key, canonicalize((value as Record<string, unknown>)[key])]),
+    );
+  }
+  return value;
 }
 
 export function isLegalAction(_state: GameState, action: Action, legal: Action[]): boolean {

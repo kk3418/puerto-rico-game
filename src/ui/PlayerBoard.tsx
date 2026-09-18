@@ -15,6 +15,7 @@ export function PlayerBoard({
   hideVp,
   chosenRole,
   isActiveRoleOwner,
+  isGovernor,
   mayorReceived,
 }: {
   player: PlayerState;
@@ -26,6 +27,7 @@ export function PlayerBoard({
   hideVp: boolean;
   chosenRole?: Role | null;
   isActiveRoleOwner?: boolean;
+  isGovernor?: boolean;
   mayorReceived?: number;
 }) {
   const goods = (Object.keys(player.goods) as Good[]).filter((g) => player.goods[g] > 0);
@@ -34,28 +36,38 @@ export function PlayerBoard({
   return (
     <article className={`player-board ${self ? "self" : ""} ${acting ? "acting" : ""}`}>
       <header className="player-status">
-        <h2>{player.name}</h2>
+        <h2>
+          {isGovernor && (
+            <Tooltip content="總督" className="governor-mark">
+              <GameIcon kind="governor" size={28} label="總督" />
+            </Tooltip>
+          )}
+          {player.name}
+        </h2>
         <div className="status-resources">
           <span className="icon-label" title="金幣"><GameIcon kind="coin" />{player.doubloons}</span>
-          {!hideVp && <span className="icon-label" title="勝利分"><GameIcon kind="vp" />{player.vpChips}</span>}
+          {hideVp ? (
+            <HiddenVpChips vp={player.vpChips} />
+          ) : (
+            <span className="icon-label" title="勝利分"><GameIcon kind="vp" />{player.vpChips}</span>
+          )}
           <span className="icon-label" title={mayorReceived === undefined ? "殖民者總數" : "本輪新增／殖民者總數"}>
             <GameIcon kind="colonist" />{mayorReceived === undefined ? colonists : `${mayorReceived}/${colonists}`}
           </span>
           {player.unplacedColonists > 0 && <span className="status-note">待安置 {player.unplacedColonists}</span>}
           {player.sanJuan > 0 && <span className="status-note">聖胡安 {player.sanJuan}</span>}
         </div>
+        <div
+          className={`role-seat ${chosenRole ? "occupied" : ""} ${isActiveRoleOwner ? "active" : ""}`}
+          aria-label={chosenRole ? `本輪角色：${ROLE_ZH[chosenRole]}` : "本輪角色"}
+        >
+          {chosenRole ? (
+            <><GameIcon kind={chosenRole} size={22} /><span>{ROLE_ZH[chosenRole]}</span></>
+          ) : (
+            <span>角色位</span>
+          )}
+        </div>
       </header>
-
-      <div
-        className={`role-seat ${chosenRole ? "occupied" : ""} ${isActiveRoleOwner ? "active" : ""}`}
-        aria-label={chosenRole ? `本輪角色：${ROLE_ZH[chosenRole]}` : "本輪角色"}
-      >
-        {chosenRole ? (
-          <><GameIcon kind={chosenRole} size={32} /><span>{ROLE_ZH[chosenRole]}</span></>
-        ) : (
-          <span>角色位</span>
-        )}
-      </div>
 
       <section className="player-zone city-zone">
         <h3>建築物區</h3>
@@ -171,6 +183,18 @@ export function PlayerBoard({
         </section>
       )}
     </article>
+  );
+}
+
+function HiddenVpChips({ vp }: { vp: number }) {
+  if (vp <= 0) return null;
+  return (
+    <Tooltip content="勝利分籌碼（面朝下）" className="vp-chips">
+      <span className="vp-chip-stack" aria-label="勝利分籌碼面朝下">
+        <GameIcon kind="vpFive" size={20} />
+        <GameIcon kind="vpOne" size={15} />
+      </span>
+    </Tooltip>
   );
 }
 

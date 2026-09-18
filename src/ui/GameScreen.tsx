@@ -1,39 +1,71 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { abandonMatch, finishMatch } from "../api/matches";
+import { clearLastMatchId } from "../api/auth";
 import { HeuristicAgent, HumanAgent, dispatchAction, type PlayerAgent } from "../agents";
 import {
   chosenRoleFor,
+  cloneViaJson,
   createInitialState,
   getActorIndex,
   getLegalActions,
   type Difficulty,
   type GameState,
   type PlayerCount,
+  type ScoreBreakdown,
 } from "../engine";
 import { ActionPanel } from "./ActionPanel";
 import { Board } from "./Board";
 import { EndScreen } from "./EndScreen";
 import { PlayerBoard } from "./PlayerBoard";
+import { Dialog } from "./Dialog";
 import { phasePrompt } from "./labels";
+import { useMatchSync } from "./useMatchSync";
 import "./GameScreen.css";
 
 export function GameScreen({
+  matchId,
   playerCount,
   difficulty,
+  seed,
+  nickname,
+  initialState,
+  nextSeq,
   onExit,
 }: {
+  matchId: string;
   playerCount: PlayerCount;
   difficulty: Difficulty;
+  seed: number;
+  nickname: string;
+  initialState?: GameState;
+  nextSeq: number;
   onExit: () => void;
 }) {
   const humanRef = useRef(new HumanAgent());
   const startRef = useRef<GameState | null>(null);
   if (!startRef.current) {
-    startRef.current = createInitialState({ playerCount, difficulty });
+    startRef.current = initialState
+      ? cloneViaJson(initialState)
+      : createInitialState({ playerCount, difficulty, seed, humanName: nickname });
   }
   const [state, setState] = useState<GameState>(startRef.current);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const [busy, setBusy] = useState(false);
   const [awaitingHuman, setAwaitingHuman] = useState(false);
+  const [turnSeat, setTurnSeat] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<null | "leave">(null);
+  const [logOpen, setLogOpen] = useState(false);
+  const logRef = useRef<HTMLElement>(null);
+  const logToggleRef = useRef<HTMLButtonElement>(null);
+  const logListRef = useRef<HTMLOListElement>(null);
+  const [serverScores, setServerScores] = useState<ScoreBreakdown[] | null>(null);
+  const [serverReason, setServerReason] = useState<string | null>(null);
+  const [verified, setVerified] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
+  const [finishing, setFinishing] = useState(false);
+  const { enqueue, flush, pending, syncError } = useMatchSync(matchId, nextSeq);
 
   useEffect(() => {
     const human = humanRef.current;
@@ -56,6 +88,7 @@ export function GameScreen({
         if (legal.length === 0) break;
         const agent = agents[player.id];
         if (!agent) break;
+        setTurnSeat(idx);
         if (player.isHuman) {
           setBusy(false);
           setAwaitingHuman(true);
@@ -71,7 +104,9 @@ export function GameScreen({
         });
         setAwaitingHuman(false);
         if (cancelled) return;
+        const before = current;
         current = await dispatchAction(current, action, player.id);
+        enqueue(before, action, idx);
         setState(current);
         const pause = agent.tablePauseAfterActionMs?.() ?? 0;
         if (pause > 0) {
@@ -108,7 +143,65 @@ export function GameScreen({
       delayResolve?.();
       human.cancel();
     };
-  }, [playerCount, difficulty]);
+  }, [difficulty, enqueue, playerCount]);
+
+  const completeFinish = useCallback(async () => {
+    await flush();
+    const result = await finishMatch(matchId);
+    if (result.verified) clearLastMatchId();
+    return result;
+  }, [flush, matchId]);
+
+  useEffect(() => {
+    if (!state.gameOver || !state.scores) return;
+    let cancelled = false;
+    setFinishing(true);
+    void (async () => {
+      const result = await completeFinish();
+      if (cancelled) return;
+      setServerScores(result.scores);
+      setServerReason(result.endReason);
+      setVerified(result.verified);
+    })()
+      .catch((err: Error) => {
+        if (!cancelled) setFinishError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setFinishing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [completeFinish, state.gameOver, state.scores]);
+
+  useEffect(() => {
+    if (!logOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setLogOpen(false);
+    }
+    function onPointer(event: PointerEvent) {
+      const target = event.target as Node;
+      if (logRef.current?.contains(target) || logToggleRef.current?.contains(target)) return;
+      setLogOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [logOpen]);
+
+  useEffect(() => {
+    if (error || syncError) setLogOpen(true);
+  }, [error, syncError]);
+
+  useEffect(() => {
+    if (!logOpen) return;
+    const list = logListRef.current;
+    if (!list) return;
+    list.scrollTop = list.scrollHeight;
+  }, [logOpen, state.log]);
 
   function onAct(action: Parameters<typeof dispatchAction>[1]) {
     try {
@@ -118,13 +211,61 @@ export function GameScreen({
     }
   }
 
+  function onLeave() {
+    setDialog("leave");
+  }
+
+  async function onLeaveKeep() {
+    try {
+      await flush();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "離開失敗");
+      return;
+    }
+    onExit();
+  }
+
+  async function onLeaveAbandon() {
+    try {
+      await flush();
+      if (!stateRef.current.gameOver) {
+        await abandonMatch(matchId);
+      }
+      clearLastMatchId();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "離開失敗");
+      return;
+    }
+    onExit();
+  }
+
   if (state.gameOver && state.scores) {
-    return <EndScreen scores={state.scores} reason={state.endReason} onAgain={onExit} />;
+    return (
+      <EndScreen
+        scores={serverScores ?? state.scores}
+        reason={serverReason ?? state.endReason}
+        verified={verified}
+        finishing={finishing}
+        finishError={finishError}
+        onRetryFinish={() => {
+          setFinishError(null);
+          setFinishing(true);
+          void completeFinish()
+            .then((result) => {
+              setServerScores(result.scores);
+              setServerReason(result.endReason);
+              setVerified(result.verified);
+            })
+            .catch((err: Error) => setFinishError(err.message))
+            .finally(() => setFinishing(false));
+        }}
+        onAgain={onExit}
+      />
+    );
   }
 
   const legal = getLegalActions(state);
   const humanTurn = awaitingHuman && !busy;
-  const actor = getActorIndex(state);
   const you = state.players[0]!;
   const others = state.players.slice(1);
 
@@ -135,11 +276,62 @@ export function GameScreen({
         <p>
           第 {state.round} 輪 · 總督 {state.players[state.governorIndex]?.name}
           {state.endTriggered ? " · 終局已觸發" : ""}
+          {pending > 0 ? " · 同步中" : ""}
         </p>
-        <button type="button" className="text-btn" onClick={onExit}>
-          離開
-        </button>
+        <div className="table-actions">
+          <button
+            ref={logToggleRef}
+            type="button"
+            className={`arena-log-toggle${logOpen ? " is-open" : ""}`}
+            aria-expanded={logOpen}
+            aria-controls="arena-log-panel"
+            onClick={() => setLogOpen((open) => !open)}
+          >
+            航海日誌
+          </button>
+          <button type="button" className="text-btn" onClick={onLeave}>
+            離開
+          </button>
+        </div>
       </header>
+      <aside
+        ref={logRef}
+        id="arena-log-panel"
+        className="arena-log"
+        aria-label="航海日誌"
+        hidden={!logOpen}
+      >
+        {state.log.length === 0 ? (
+          <p className="log">尚無紀錄</p>
+        ) : (
+          <ol className="log" ref={logListRef}>
+            {state.log.map((e) => (
+              <li key={e.id}>{e.text}</li>
+            ))}
+          </ol>
+        )}
+        {syncError && <p className="error">{syncError}</p>}
+        {error && <p className="error">{error}</p>}
+      </aside>
+      {dialog === "leave" && (
+        <Dialog
+          title="是否要存檔再離開嗎"
+          showClose
+          onClose={() => setDialog(null)}
+          actions={
+            <>
+              <button type="button" className="text-btn" onClick={() => void onLeaveAbandon()}>
+                否
+              </button>
+              <button type="button" className="text-btn" onClick={() => void onLeaveKeep()}>
+                是
+              </button>
+            </>
+          }
+        >
+          <p>按「否」會放棄本局，進度將無法繼續。</p>
+        </Dialog>
+      )}
 
       <main className={`table-arena seats-${state.players.length}`}>
         <div className="arena-board">
@@ -151,6 +343,12 @@ export function GameScreen({
             onAct={onAct}
             busy={busy}
             prompt={phasePrompt(state.phase.type)}
+            activeRole={state.phase.type === "chooseRole" ? null : state.activeRole}
+            roleOwnerName={
+              state.phase.type !== "chooseRole" && state.activeRoleOwnerIndex != null
+                ? state.players[state.activeRoleOwnerIndex]?.name
+                : null
+            }
           />
         </div>
         {others.map((p, index) => (
@@ -158,13 +356,14 @@ export function GameScreen({
             <PlayerBoard
               player={p}
               self={false}
-              acting={actor === index + 1}
+              acting={turnSeat === index + 1}
               legal={[]}
               onAct={onAct}
               humanTurn={false}
               hideVp
               chosenRole={chosenRoleFor(state, index + 1)}
               isActiveRoleOwner={state.activeRoleOwnerIndex === index + 1}
+              isGovernor={state.governorIndex === index + 1}
               mayorReceived={receivedForPlayer(state, index + 1)}
             />
           </div>
@@ -173,25 +372,17 @@ export function GameScreen({
           <PlayerBoard
             player={you}
             self
-            acting={actor === 0}
+            acting={humanTurn}
             legal={humanTurn ? legal : []}
             onAct={onAct}
             humanTurn={humanTurn}
             hideVp={false}
             chosenRole={chosenRoleFor(state, 0)}
             isActiveRoleOwner={state.activeRoleOwnerIndex === 0}
+            isGovernor={state.governorIndex === 0}
             mayorReceived={receivedForPlayer(state, 0)}
           />
         </div>
-        <aside className="arena-log">
-          <h2>航海日誌</h2>
-          <ol className="log">
-            {state.log.slice(-8).map((e) => (
-              <li key={e.id}>{e.text}</li>
-            ))}
-          </ol>
-          {error && <p className="error">{error}</p>}
-        </aside>
       </main>
     </div>
   );
