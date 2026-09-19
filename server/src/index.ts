@@ -4,8 +4,9 @@ import { env } from "./env";
 
 const app = createApp();
 
-const server = app.listen(env.PORT, () => {
-  console.log(`API listening on http://127.0.0.1:${env.PORT}`);
+// 0.0.0.0 is required by hosts that health-check the container over IPv4.
+const server = app.listen(env.PORT, "0.0.0.0", () => {
+  console.log(`API listening on 0.0.0.0:${env.PORT}`);
 });
 
 async function shutdown() {

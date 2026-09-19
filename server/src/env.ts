@@ -2,7 +2,8 @@ import path from "node:path";
 import { config as loadEnv } from "dotenv";
 import { z } from "zod";
 
-loadEnv({ path: path.resolve(process.cwd(), ".env") });
+// quiet: hosted environments inject real env vars and have no .env to report on.
+loadEnv({ path: path.resolve(process.cwd(), ".env"), quiet: true });
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),

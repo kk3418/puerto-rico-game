@@ -38,7 +38,10 @@ npm run dev
 | `npm run dev` | 同時開前端與 API |
 | `npm run dev:client` | 只開 Vite |
 | `npm run dev:server` | 只開 Express |
-| `npm run build` | 前後端型別檢查並打包前端 |
+| `npm run build` | 型別檢查後打包前端與後端 |
+| `npm run build:client` | 只打包前端到 `dist/` |
+| `npm run build:server` | 只用 esbuild 打包後端到 `server/dist/` |
+| `npm start` | 跑打包後的後端（正式環境入口） |
 | `npm run preview` | 預覽正式打包 |
 | `npm test` | 規則引擎與後端單元測試 |
 | `npm run test:watch` | 監看模式跑測試 |
@@ -147,6 +150,36 @@ LLM 與啟發式做同一件事：給定狀態，從合法動作裡選一個。�
 
 全端會另外長出、但不推翻引擎的部分：房間碼、斷線重連、只能動自己的回合、延遲與樂觀更新、多人存檔需全體同意。單人 vs AI 可繼續本機引擎。
 
+## 部署（DigitalOcean App Platform）
+
+規格在 [`.do/app.yaml`](.do/app.yaml)，後端映像在 [`.do/Dockerfile`](.do/Dockerfile)。
+
+```bash
+doctl apps create --spec .do/app.yaml      # 首次建立
+doctl apps update <app-id> --spec .do/app.yaml
+```
+
+只有一個計費容器。前端是 static site 元件，在付費 app 裡是 $0 且由 CDN 提供，所以後端重新部署或睡著時前端照樣可用。
+
+| 元件 | 內容 | 費用 |
+| --- | --- | --- |
+| `web` static site | `npm run build:client` → `dist/` | $0 |
+| `api` service | `.do/Dockerfile`，1 vCPU / 512 MiB | $5／月 |
+| `db` dev database | Postgres 17，512 MiB | $7／月 |
+| `migrate` job | `PRE_DEPLOY`，跑 `prisma migrate deploy` | 僅執行時計費 |
+| `prune-sessions` job | `SCHEDULED` 每日刪除過期 session | 僅執行時計費 |
+
+部署前要在控制台補的環境變數：`SESSION_SECRET`（`openssl rand -hex 32`）、`GOOGLE_CLIENT_ID`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`，以及 static site 的 `VITE_GOOGLE_CLIENT_ID`。`CLIENT_ORIGIN` 與 `GITHUB_CALLBACK_URL` 由 `${APP_URL}` 自動帶入。GitHub OAuth App 的 callback 要設成 `https://<你的網域>/api/auth/github/callback`。
+
+幾個容易踩到的點：
+
+- **`VITE_GOOGLE_CLIENT_ID` 必須是 `BUILD_TIME`**，Vite 會把它 inline 進 bundle；`GOOGLE_CLIENT_ID` 則是後端的 runtime 變數。兩個都要填才會出現 Google 登入。
+- **ingress 的 `preserve_path_prefix: true` 不能拿掉。** App Platform 預設會裁掉 match 到的路徑前綴，`/api/health` 會變成 `/health` 送進 Express，全部 route 都會 404。
+- **用 Dockerfile 而不是 Node buildpack**，因為 buildpack 會在 build 後移除 devDependencies，而 Prisma 產生的 client 位於 `node_modules/.prisma`。
+- 前端呼叫的是相對路徑 `/api`，所以 static site 與 service 必須在同一個 app、同一個網域，session cookie 才不需要處理跨站。
+
+`inactivity_sleep`（Scale to Zero，睡著時只收 10% 費用）在 spec 裡是註解狀態：它目前是 private preview，要先向 DO 申請開通；另外 Phase 2 開了 websocket 之後就不該啟用，睡著會斷長連線。
+
 ## 技術
 
-React 19、TypeScript、Vite、Vitest、Express、Prisma、Postgres。
+React 19、TypeScript、Vite、Vitest、Express、Prisma、Postgres。前端由 Vite 打包，後端以 esbuild 打包成單一檔案。

@@ -1,0 +1,136 @@
+# DigitalOcean App Platform spec.
+#   doctl apps create --spec .do/app.yaml
+#   doctl apps update <app-id> --spec .do/app.yaml
+#
+# One billed container (the `api` service). The `web` static site is $0 in a
+# paid app and is served from the CDN, so the frontend stays up and stays cheap
+# even while the service sleeps or redeploys.
+
+name: puerto-rico-game
+region: sgp
+
+databases:
+  # Dev database: 512 MiB, $7/mo, no backups, destroyed with the app.
+  # Switch to `production: true` + `cluster_name` once losing match history hurts.
+  - name: db
+    engine: PG
+    version: "17"
+    production: false
+
+services:
+  - name: api
+    github:
+      repo: kk3418/puerto-rico-game
+      branch: master
+      deploy_on_push: true
+    dockerfile_path: .do/Dockerfile
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_count: 1
+    http_port: 8080
+    health_check:
+      http_path: /api/health
+      initial_delay_seconds: 15
+      period_seconds: 10
+      failure_threshold: 3
+    # Scale to Zero bills a sleeping service at 10% of $5. It is a private
+    # preview feature, so request access from DO support before uncommenting.
+    # Do not enable this once Phase 2 opens websockets: sleeping drops them.
+    # inactivity_sleep:
+    #   after_seconds: 1800
+    envs:
+      # Node does not reliably read the container memory limit when sizing its
+      # heap, so cap it below the 512 MiB instance.
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
+        scope: RUN_TIME
+      - key: DATABASE_URL
+        value: ${db.DATABASE_URL}
+        scope: RUN_TIME
+      # Generate with: openssl rand -hex 32
+      - key: SESSION_SECRET
+        value: REPLACE_WITH_OPENSSL_RAND_HEX_32
+        type: SECRET
+        scope: RUN_TIME
+      - key: CLIENT_ORIGIN
+        value: ${APP_URL}
+        scope: RUN_TIME
+      # Runtime counterpart of VITE_GOOGLE_CLIENT_ID below. Same value.
+      # Leave blank to hide the Google button and play as a guest.
+      - key: GOOGLE_CLIENT_ID
+        value: ""
+        scope: RUN_TIME
+      - key: GITHUB_CLIENT_ID
+        value: ""
+        scope: RUN_TIME
+      - key: GITHUB_CLIENT_SECRET
+        value: ""
+        type: SECRET
+        scope: RUN_TIME
+      - key: GITHUB_CALLBACK_URL
+        value: ${APP_URL}/api/auth/github/callback
+        scope: RUN_TIME
+
+static_sites:
+  - name: web
+    github:
+      repo: kk3418/puerto-rico-game
+      branch: master
+      deploy_on_push: true
+    environment_slug: node-js
+    build_command: npm run build:client
+    output_dir: dist
+    catchall_document: index.html
+    envs:
+      # Vite inlines this at build time, so it must be BUILD_TIME and must be
+      # set here rather than on the service.
+      - key: VITE_GOOGLE_CLIENT_ID
+        value: ""
+        scope: BUILD_TIME
+
+jobs:
+  - name: migrate
+    kind: PRE_DEPLOY
+    github:
+      repo: kk3418/puerto-rico-game
+      branch: master
+      deploy_on_push: true
+    dockerfile_path: .do/Dockerfile
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    run_command: ./node_modules/.bin/prisma migrate deploy --schema server/prisma/schema.prisma
+    envs:
+      - key: DATABASE_URL
+        value: ${db.DATABASE_URL}
+        scope: RUN_TIME
+
+  - name: prune-sessions
+    kind: SCHEDULED
+    schedule:
+      cron: "17 4 * * *"
+      time_zone: Asia/Taipei
+    github:
+      repo: kk3418/puerto-rico-game
+      branch: master
+      deploy_on_push: true
+    dockerfile_path: .do/Dockerfile
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    run_command: ./node_modules/.bin/prisma db execute --schema server/prisma/schema.prisma --file server/prisma/sql/prune-sessions.sql
+    envs:
+      - key: DATABASE_URL
+        value: ${db.DATABASE_URL}
+        scope: RUN_TIME
+
+ingress:
+  rules:
+    # preserve_path_prefix is required: without it /api/health reaches Express
+    # as /health and every route 404s.
+    - match:
+        path:
+          prefix: /api
+      component:
+        name: api
+        preserve_path_prefix: true
+    - match:
+        path:
+          prefix: /
+      component:
+        name: web
