@@ -266,8 +266,12 @@ export function GameScreen({
 
   const legal = getLegalActions(state);
   const humanTurn = awaitingHuman && !busy;
-  const you = state.players[0]!;
-  const others = state.players.slice(1);
+  const youIndex = Math.max(0, state.players.findIndex((p) => p.isHuman));
+  const you = state.players[youIndex]!;
+  const others = clockwiseFrom(youIndex, state.players.length).map((playerIndex) => ({
+    player: state.players[playerIndex]!,
+    playerIndex,
+  }));
 
   return (
     <div className="table">
@@ -351,20 +355,20 @@ export function GameScreen({
             }
           />
         </div>
-        {others.map((p, index) => (
-          <div className={`player-seat seat-${index + 1}`} key={p.id}>
+        {others.map(({ player, playerIndex }, index) => (
+          <div className={`player-seat seat-${index + 1}`} key={player.id}>
             <PlayerBoard
-              player={p}
+              player={player}
               self={false}
-              acting={turnSeat === index + 1}
+              acting={turnSeat === playerIndex}
               legal={[]}
               onAct={onAct}
               humanTurn={false}
               hideVp
-              chosenRole={chosenRoleFor(state, index + 1)}
-              isActiveRoleOwner={state.activeRoleOwnerIndex === index + 1}
-              isGovernor={state.governorIndex === index + 1}
-              mayorReceived={receivedForPlayer(state, index + 1)}
+              chosenRole={chosenRoleFor(state, playerIndex)}
+              isActiveRoleOwner={state.activeRoleOwnerIndex === playerIndex}
+              isGovernor={state.governorIndex === playerIndex}
+              mayorReceived={receivedForPlayer(state, playerIndex)}
             />
           </div>
         ))}
@@ -372,15 +376,15 @@ export function GameScreen({
           <PlayerBoard
             player={you}
             self
-            acting={humanTurn}
+            acting={turnSeat === youIndex}
             legal={humanTurn ? legal : []}
             onAct={onAct}
             humanTurn={humanTurn}
             hideVp={false}
-            chosenRole={chosenRoleFor(state, 0)}
-            isActiveRoleOwner={state.activeRoleOwnerIndex === 0}
-            isGovernor={state.governorIndex === 0}
-            mayorReceived={receivedForPlayer(state, 0)}
+            chosenRole={chosenRoleFor(state, youIndex)}
+            isActiveRoleOwner={state.activeRoleOwnerIndex === youIndex}
+            isGovernor={state.governorIndex === youIndex}
+            mayorReceived={receivedForPlayer(state, youIndex)}
           />
         </div>
       </main>
@@ -392,4 +396,9 @@ function receivedForPlayer(state: GameState, playerIndex: number): number | unde
   return state.phase.type === "mayorAssign" && state.phase.actorIndex === playerIndex
     ? state.phase.received
     : undefined;
+}
+
+/** Seats clockwise around the table, starting with the player to the human's left. */
+function clockwiseFrom(startIndex: number, count: number): number[] {
+  return Array.from({ length: count - 1 }, (_, offset) => (startIndex + offset + 1) % count);
 }
