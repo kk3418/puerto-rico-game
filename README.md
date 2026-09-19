@@ -159,15 +159,15 @@ doctl apps create --spec .do/app.yaml      # 首次建立
 doctl apps update <app-id> --spec .do/app.yaml
 ```
 
-只有一個計費容器。前端是 static site 元件，在付費 app 裡是 $0 且由 CDN 提供，所以後端重新部署或睡著時前端照樣可用。
+前端是獨立的 static site 元件、由 CDN 提供，所以後端重新部署時前端照樣可用。
 
-| 元件 | 內容 | 費用 |
-| --- | --- | --- |
-| `web` static site | `npm run build:client` → `dist/` | $0 |
-| `api` service | `.do/Dockerfile`，1 vCPU / 512 MiB | $5／月 |
-| `db` dev database | Postgres 17，512 MiB | $7／月 |
-| `migrate` job | `PRE_DEPLOY`，跑 `prisma migrate deploy` | 僅執行時計費 |
-| `prune-sessions` job | `SCHEDULED` 每日刪除過期 session | 僅執行時計費 |
+| 元件 | 內容 |
+| --- | --- |
+| `web` static site | `npm run build:client` → `dist/` |
+| `api` service | `.do/Dockerfile` |
+| `db` database | Postgres 17 |
+| `migrate` job | `PRE_DEPLOY`，跑 `prisma migrate deploy` |
+| `prune-sessions` job | `SCHEDULED` 每日刪除過期 session |
 
 部署前要在控制台補的環境變數：`SESSION_SECRET`（`openssl rand -hex 32`）、`GOOGLE_CLIENT_ID`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`，以及 static site 的 `VITE_GOOGLE_CLIENT_ID`。`CLIENT_ORIGIN` 與 `GITHUB_CALLBACK_URL` 由 `${APP_URL}` 自動帶入。GitHub OAuth App 的 callback 要設成 `https://<你的網域>/api/auth/github/callback`。
 
@@ -177,8 +177,6 @@ doctl apps update <app-id> --spec .do/app.yaml
 - **ingress 的 `preserve_path_prefix: true` 不能拿掉。** App Platform 預設會裁掉 match 到的路徑前綴，`/api/health` 會變成 `/health` 送進 Express，全部 route 都會 404。
 - **用 Dockerfile 而不是 Node buildpack**，因為 buildpack 會在 build 後移除 devDependencies，而 Prisma 產生的 client 位於 `node_modules/.prisma`。
 - 前端呼叫的是相對路徑 `/api`，所以 static site 與 service 必須在同一個 app、同一個網域，session cookie 才不需要處理跨站。
-
-`inactivity_sleep`（Scale to Zero，睡著時只收 10% 費用）在 spec 裡是註解狀態：它目前是 private preview，要先向 DO 申請開通；另外 Phase 2 開了 websocket 之後就不該啟用，睡著會斷長連線。
 
 ## 技術
 
