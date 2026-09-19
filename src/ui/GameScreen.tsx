@@ -403,3 +403,8 @@ function receivedForPlayer(state: GameState, playerIndex: number): number | unde
     ? state.phase.received
     : undefined;
 }
+
+/** Seats clockwise around the table, starting with the player to the human's left. */
+function clockwiseFrom(startIndex: number, count: number): number[] {
+  return Array.from({ length: count - 1 }, (_, offset) => (startIndex + offset + 1) % count);
+}
