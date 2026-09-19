@@ -1,9 +1,18 @@
+import { ApiError } from "../api/client";
 import type { MatchEventInput } from "../api/types";
 
 export type MatchSyncQueue = {
   enqueue: (event: MatchEventInput) => void;
   flush: () => Promise<void>;
+  abort: () => void;
 };
+
+function isRetriableSyncError(err: unknown): boolean {
+  if (err instanceof ApiError) {
+    return err.status >= 500 || err.status === 408 || err.status === 429;
+  }
+  return true;
+}
 
 export function createMatchSyncQueue(options: {
   post: (events: MatchEventInput[]) => Promise<void>;
@@ -48,7 +57,8 @@ export function createMatchSyncQueue(options: {
       notify();
       let lastError: unknown;
       let sent = false;
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const attempts = Math.max(1, maxAttempts);
+      for (let attempt = 0; attempt < attempts; attempt++) {
         try {
           await options.post(batch);
           sent = true;
@@ -56,14 +66,14 @@ export function createMatchSyncQueue(options: {
           break;
         } catch (err) {
           lastError = err;
-          if (attempt < maxAttempts - 1) {
-            await sleep(retryDelay(attempt));
-          }
+          if (!isRetriableSyncError(err) || attempt >= attempts - 1) break;
+          await sleep(retryDelay(attempt));
         }
       }
       inFlight = 0;
       if (!sent) {
-        buffer = [...batch, ...buffer];
+        const retriable = isRetriableSyncError(lastError);
+        if (retriable) buffer = [...batch, ...buffer];
         notify();
         const message = lastError instanceof Error ? lastError.message : "事件同步失敗";
         options.onError?.(message);
@@ -92,5 +102,12 @@ export function createMatchSyncQueue(options: {
     }, debounceMs);
   }
 
-  return { enqueue, flush };
+  function abort() {
+    clearDebounce();
+    buffer = [];
+    inFlight = 0;
+    notify();
+  }
+
+  return { enqueue, flush, abort };
 }

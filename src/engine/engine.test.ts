@@ -14,6 +14,7 @@ import {
   colonistCount,
   totalColonists,
   vpChipCount,
+  vpTokenCount,
   scoreGame,
   scorePlayer,
   chosenRoleFor,
@@ -91,6 +92,12 @@ describe("setup", () => {
     expect(setup(3).roles.filter((r) => r.role === "prospector")).toHaveLength(0);
     expect(setup(4).roles.filter((r) => r.role === "prospector")).toHaveLength(1);
     expect(setup(5).roles.filter((r) => r.role === "prospector")).toHaveLength(2);
+  });
+});
+
+describe("victory point tokens", () => {
+  it("exchanges every five 1-point tokens for one 5-point token", () => {
+    expect([0, 1, 4, 5, 6, 9, 10].map(vpTokenCount)).toEqual([0, 1, 4, 1, 2, 5, 2]);
   });
 });
 

@@ -1,4 +1,12 @@
-import { CITY_SPACES, citySpacesUsed, getBuilding, totalColonists, type Action, type PlayerState } from "../engine";
+import {
+  CITY_SPACES,
+  citySpacesUsed,
+  getBuilding,
+  totalColonists,
+  vpTokenCount,
+  type Action,
+  type PlayerState,
+} from "../engine";
 import { GOOD_TONE, GOOD_ZH, ROLE_ZH, TILE_ZH } from "./labels";
 import type { Good, Role } from "../engine/types";
 import { GameIcon } from "./icons";
@@ -187,13 +195,15 @@ export function PlayerBoard({
 }
 
 function HiddenVpChips({ vp }: { vp: number }) {
-  if (vp <= 0) return null;
+  const tokens = vpTokenCount(vp);
+  if (tokens <= 0) return null;
   return (
-    <Tooltip content="勝利分籌碼（面朝下）" className="vp-chips">
-      <span className="vp-chip-stack" aria-label="勝利分籌碼面朝下">
+    <Tooltip content="只公開籌碼枚數，不公開面額與總分" className="vp-chips">
+      <span className="vp-chip-stack" aria-label={`${tokens} 枚面朝下的勝利分籌碼`}>
         <GameIcon kind="vpFive" size={20} />
         <GameIcon kind="vpOne" size={15} />
       </span>
+      <span className="vp-chip-count">×{tokens}</span>
     </Tooltip>
   );
 }
