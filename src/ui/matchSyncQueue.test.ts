@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ApiError } from "../api/client";
 import type { MatchEventInput } from "../api/types";
 import { createMatchSyncQueue } from "./matchSyncQueue";
 
@@ -87,5 +88,21 @@ describe("createMatchSyncQueue", () => {
     await expect(queue.flush()).rejects.toThrow("network");
     await queue.flush();
     expect(received).toEqual([[3], [3]]);
+  });
+
+  it("does not retry or requeue 4xx illegal-action errors", async () => {
+    let attempts = 0;
+    const queue = createMatchSyncQueue({
+      debounceMs: 10_000,
+      maxAttempts: 3,
+      async post() {
+        attempts += 1;
+        throw new ApiError(400, "事件 6 無法套用：Illegal action");
+      },
+    });
+    queue.enqueue(event(6));
+    await expect(queue.flush()).rejects.toThrow(/無法套用/);
+    await expect(queue.flush()).resolves.toBeUndefined();
+    expect(attempts).toBe(1);
   });
 });
