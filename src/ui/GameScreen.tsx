@@ -57,6 +57,7 @@ export function GameScreen({
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<null | "leave">(null);
   const [logOpen, setLogOpen] = useState(false);
+  const [selectedPlayerIndex, setSelectedPlayerIndex] = useState(0);
   const logRef = useRef<HTMLElement>(null);
   const logToggleRef = useRef<HTMLButtonElement>(null);
   const logListRef = useRef<HTMLOListElement>(null);
@@ -65,14 +66,17 @@ export function GameScreen({
   const [verified, setVerified] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
-  const { enqueue, flush, pending, syncError } = useMatchSync(matchId, nextSeq);
+  const { enqueue, flush, pending } = useMatchSync(matchId, nextSeq);
+
+  const enqueueRef = useRef(enqueue);
+  enqueueRef.current = enqueue;
 
   useEffect(() => {
     const human = humanRef.current;
     let cancelled = false;
     let delayTimer: ReturnType<typeof setTimeout> | undefined;
     let delayResolve: (() => void) | undefined;
-    const initial = startRef.current!;
+    const initial = stateRef.current;
     const agents: Record<string, PlayerAgent> = {};
     for (const p of initial.players) {
       agents[p.id] = p.isHuman ? human : new HeuristicAgent();
@@ -106,7 +110,8 @@ export function GameScreen({
         if (cancelled) return;
         const before = current;
         current = await dispatchAction(current, action, player.id);
-        enqueue(before, action, idx);
+        if (cancelled) return;
+        enqueueRef.current(before, action, idx);
         setState(current);
         const pause = agent.tablePauseAfterActionMs?.() ?? 0;
         if (pause > 0) {
@@ -120,7 +125,7 @@ export function GameScreen({
 
     void loop(initial).catch((err: Error) => {
       if (!cancelled && err.message !== "cancelled") {
-        setError(err.message);
+        console.error(err);
         setBusy(false);
         setAwaitingHuman(false);
       }
@@ -143,7 +148,7 @@ export function GameScreen({
       delayResolve?.();
       human.cancel();
     };
-  }, [difficulty, enqueue, playerCount]);
+  }, [difficulty, playerCount]);
 
   const completeFinish = useCallback(async () => {
     await flush();
@@ -193,8 +198,8 @@ export function GameScreen({
   }, [logOpen]);
 
   useEffect(() => {
-    if (error || syncError) setLogOpen(true);
-  }, [error, syncError]);
+    if (error) setLogOpen(true);
+  }, [error]);
 
   useEffect(() => {
     if (!logOpen) return;
@@ -266,12 +271,8 @@ export function GameScreen({
 
   const legal = getLegalActions(state);
   const humanTurn = awaitingHuman && !busy;
-  const youIndex = Math.max(0, state.players.findIndex((p) => p.isHuman));
-  const you = state.players[youIndex]!;
-  const others = clockwiseFrom(youIndex, state.players.length).map((playerIndex) => ({
-    player: state.players[playerIndex]!,
-    playerIndex,
-  }));
+  const selectedPlayer = state.players[selectedPlayerIndex] ?? state.players[0]!;
+  const selectedIsYou = selectedPlayerIndex === 0;
 
   return (
     <div className="table">
@@ -314,7 +315,6 @@ export function GameScreen({
             ))}
           </ol>
         )}
-        {syncError && <p className="error">{syncError}</p>}
         {error && <p className="error">{error}</p>}
       </aside>
       {dialog === "leave" && (
@@ -337,7 +337,45 @@ export function GameScreen({
         </Dialog>
       )}
 
-      <main className={`table-arena seats-${state.players.length}`}>
+      <main className="table-arena">
+        <div className="arena-players">
+          <nav className="player-seats" aria-label="玩家座位">
+            {state.players.map((player, index) => {
+              const selected = index === selectedPlayerIndex;
+              const acting = index === turnSeat;
+              return (
+                <button
+                  key={player.id}
+                  type="button"
+                  className={`player-seat-tab${selected ? " selected" : ""}${acting ? " acting" : ""}`}
+                  aria-current={selected ? "true" : undefined}
+                  onClick={() => setSelectedPlayerIndex(index)}
+                >
+                  <span className="seat-number">座位 {index + 1}</span>
+                  <strong>{player.name}{index === 0 ? "（你）" : ""}</strong>
+                  {index === state.governorIndex && <span className="seat-status">總督</span>}
+                  {acting && <span className="seat-status">行動中</span>}
+                </button>
+              );
+            })}
+          </nav>
+          <div className="player-board-stage">
+            <PlayerBoard
+              key={selectedPlayer.id}
+              player={selectedPlayer}
+              self={selectedIsYou}
+              acting={selectedIsYou ? humanTurn : turnSeat === selectedPlayerIndex}
+              legal={selectedIsYou && humanTurn ? legal : []}
+              onAct={onAct}
+              humanTurn={selectedIsYou && humanTurn}
+              hideVp={!selectedIsYou}
+              chosenRole={chosenRoleFor(state, selectedPlayerIndex)}
+              isActiveRoleOwner={state.activeRoleOwnerIndex === selectedPlayerIndex}
+              isGovernor={state.governorIndex === selectedPlayerIndex}
+              mayorReceived={receivedForPlayer(state, selectedPlayerIndex)}
+            />
+          </div>
+        </div>
         <div className="arena-board">
           <Board state={state} legal={humanTurn ? legal : []} onAct={onAct} humanTurn={humanTurn} />
         </div>
@@ -353,38 +391,6 @@ export function GameScreen({
                 ? state.players[state.activeRoleOwnerIndex]?.name
                 : null
             }
-          />
-        </div>
-        {others.map(({ player, playerIndex }, index) => (
-          <div className={`player-seat seat-${index + 1}`} key={player.id}>
-            <PlayerBoard
-              player={player}
-              self={false}
-              acting={turnSeat === playerIndex}
-              legal={[]}
-              onAct={onAct}
-              humanTurn={false}
-              hideVp
-              chosenRole={chosenRoleFor(state, playerIndex)}
-              isActiveRoleOwner={state.activeRoleOwnerIndex === playerIndex}
-              isGovernor={state.governorIndex === playerIndex}
-              mayorReceived={receivedForPlayer(state, playerIndex)}
-            />
-          </div>
-        ))}
-        <div className="player-seat self-seat">
-          <PlayerBoard
-            player={you}
-            self
-            acting={turnSeat === youIndex}
-            legal={humanTurn ? legal : []}
-            onAct={onAct}
-            humanTurn={humanTurn}
-            hideVp={false}
-            chosenRole={chosenRoleFor(state, youIndex)}
-            isActiveRoleOwner={state.activeRoleOwnerIndex === youIndex}
-            isGovernor={state.governorIndex === youIndex}
-            mayorReceived={receivedForPlayer(state, youIndex)}
           />
         </div>
       </main>

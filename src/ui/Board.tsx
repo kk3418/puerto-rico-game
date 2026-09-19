@@ -18,7 +18,7 @@ export function Board({
 }) {
   return (
     <section className="public-board">
-      <div className="role-row">
+      <div className={`role-row roles-${state.roles.length}`}>
         {state.roles.map((slot) => {
           const action = legal.find((a) => a.type === "chooseRole" && a.roleId === slot.id);
           const role = slot.role as Role;
