@@ -46,9 +46,9 @@ services:
       - key: DATABASE_URL
         value: ${db.DATABASE_URL}
         scope: RUN_TIME
-      # Generate with: openssl rand -hex 32
+      # Set in the App Platform console. Do not put a real value in this file.
+      # Generate with: openssl rand -hex 32 — the API refuses to boot without it.
       - key: SESSION_SECRET
-        value: REPLACE_WITH_OPENSSL_RAND_HEX_32
         type: SECRET
         scope: RUN_TIME
       - key: CLIENT_ORIGIN

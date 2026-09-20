@@ -169,7 +169,7 @@ doctl apps update <app-id> --spec .do/app.yaml
 | `migrate` job | `PRE_DEPLOY`，跑 `prisma migrate deploy` |
 | `prune-sessions` job | `SCHEDULED` 每日刪除過期 session |
 
-部署前要在控制台補的環境變數：`SESSION_SECRET`（`openssl rand -hex 32`）、`GOOGLE_CLIENT_ID`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`，以及 static site 的 `VITE_GOOGLE_CLIENT_ID`。`CLIENT_ORIGIN` 與 `GITHUB_CALLBACK_URL` 由 `${APP_URL}` 自動帶入。GitHub OAuth App 的 callback 要設成 `https://<你的網域>/api/auth/github/callback`。
+部署前要在控制台補的環境變數：`SESSION_SECRET`（`openssl rand -hex 32`，至少 32 字、不要寫進 spec）、`GOOGLE_CLIENT_ID`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`，以及 static site 的 `VITE_GOOGLE_CLIENT_ID`。沒設 `SESSION_SECRET` 的話 API 起不來。`CLIENT_ORIGIN` 與 `GITHUB_CALLBACK_URL` 由 `${APP_URL}` 自動帶入。GitHub OAuth App 的 callback 要設成 `https://<你的網域>/api/auth/github/callback`。
 
 幾個容易踩到的點：
 

@@ -1,0 +1,12 @@
+# Build context is the repo root (.do/Dockerfile).
+.git
+.cursor
+.pdf_tools
+node_modules
+dist
+server/dist
+.env
+.env.*
+!.env.example
+*.local
+.DS_Store
