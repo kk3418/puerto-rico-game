@@ -778,7 +778,17 @@
   padding: 0.4rem 0.75rem;
 }
 
-.act-confirm {
+.act-list button:disabled {
+  opacity: 0.45;
+  background: #4a3a32;
+  color: rgba(255, 248, 232, 0.55);
+  cursor: not-allowed;
+  filter: grayscale(0.3);
+  box-shadow: none;
+}
+
+.act-confirm,
+.act-confirm-wrap {
   flex: 0 0 auto;
 }
 

@@ -386,6 +386,7 @@ export function GameScreen({
             onAct={onAct}
             busy={busy}
             prompt={phasePrompt(state.phase.type)}
+            phaseType={humanTurn ? state.phase.type : undefined}
             activeRole={state.phase.type === "chooseRole" ? null : state.activeRole}
             roleOwnerName={
               state.phase.type !== "chooseRole" && state.activeRoleOwnerIndex != null
