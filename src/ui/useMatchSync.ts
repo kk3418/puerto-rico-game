@@ -9,12 +9,14 @@ export function useMatchSync(matchId: string, startSeq: number) {
   const matchIdRef = useRef(matchId);
   matchIdRef.current = matchId;
   const [pending, setPending] = useState(0);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const queueRef = useRef<MatchSyncQueue | null>(null);
   if (!queueRef.current) {
     queueRef.current = createMatchSyncQueue({
       post: (events) => postMatchEvents(matchIdRef.current, events).then(() => undefined),
       onPending: setPending,
       onError: (message) => {
+        setSyncError(message);
         if (message) console.error(message);
       },
     });
@@ -39,5 +41,5 @@ export function useMatchSync(matchId: string, startSeq: number) {
     queueRef.current!.enqueue(event);
   }, []);
 
-  return { enqueue, flush, pending };
+  return { enqueue, flush, pending, syncError };
 }

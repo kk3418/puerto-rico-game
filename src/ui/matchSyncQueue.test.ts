@@ -90,19 +90,26 @@ describe("createMatchSyncQueue", () => {
     expect(received).toEqual([[3], [3]]);
   });
 
-  it("does not retry or requeue 4xx illegal-action errors", async () => {
+  it("latches 4xx illegal-action errors so flush stays failed and later events are not posted", async () => {
     let attempts = 0;
+    const received: number[][] = [];
+    const errors: Array<string | null> = [];
     const queue = createMatchSyncQueue({
       debounceMs: 10_000,
       maxAttempts: 3,
-      async post() {
+      onError: (message) => errors.push(message),
+      async post(events) {
         attempts += 1;
+        received.push(events.map((item) => item.seq));
         throw new ApiError(400, "事件 6 無法套用：Illegal action");
       },
     });
     queue.enqueue(event(6));
     await expect(queue.flush()).rejects.toThrow(/無法套用/);
-    await expect(queue.flush()).resolves.toBeUndefined();
+    queue.enqueue(event(7));
+    await expect(queue.flush()).rejects.toThrow(/無法套用/);
     expect(attempts).toBe(1);
+    expect(received).toEqual([[6]]);
+    expect(errors).toEqual(["事件 6 無法套用：Illegal action"]);
   });
 });

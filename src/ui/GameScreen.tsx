@@ -66,7 +66,7 @@ export function GameScreen({
   const [verified, setVerified] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
-  const { enqueue, flush, pending } = useMatchSync(matchId, nextSeq);
+  const { enqueue, flush, pending, syncError } = useMatchSync(matchId, nextSeq);
 
   const enqueueRef = useRef(enqueue);
   enqueueRef.current = enqueue;
@@ -198,8 +198,8 @@ export function GameScreen({
   }, [logOpen]);
 
   useEffect(() => {
-    if (error) setLogOpen(true);
-  }, [error]);
+    if (error || syncError) setLogOpen(true);
+  }, [error, syncError]);
 
   useEffect(() => {
     if (!logOpen) return;
@@ -232,7 +232,7 @@ export function GameScreen({
 
   async function onLeaveAbandon() {
     try {
-      await flush();
+      await flush().catch(() => undefined);
       if (!stateRef.current.gameOver) {
         await abandonMatch(matchId);
       }
@@ -281,7 +281,7 @@ export function GameScreen({
         <p>
           第 {state.round} 輪 · 總督 {state.players[state.governorIndex]?.name}
           {state.endTriggered ? " · 終局已觸發" : ""}
-          {pending > 0 ? " · 同步中" : ""}
+          {syncError ? " · 同步失敗" : pending > 0 ? " · 同步中" : ""}
         </p>
         <div className="table-actions">
           <button
@@ -315,6 +315,7 @@ export function GameScreen({
             ))}
           </ol>
         )}
+        {syncError && <p className="error">{syncError}</p>}
         {error && <p className="error">{error}</p>}
       </aside>
       {dialog === "leave" && (

@@ -14,6 +14,10 @@ function isRetriableSyncError(err: unknown): boolean {
   return true;
 }
 
+function toError(err: unknown, fallback: string): Error {
+  return err instanceof Error ? err : new Error(fallback);
+}
+
 export function createMatchSyncQueue(options: {
   post: (events: MatchEventInput[]) => Promise<void>;
   debounceMs?: number;
@@ -36,6 +40,7 @@ export function createMatchSyncQueue(options: {
   let inFlight = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let chain = Promise.resolve();
+  let fatalError: Error | null = null;
 
   function notify() {
     options.onPending?.(buffer.length + inFlight);
@@ -48,9 +53,22 @@ export function createMatchSyncQueue(options: {
     }
   }
 
+  function latchFatal(err: unknown): Error {
+    const error = toError(err, "事件同步失敗");
+    fatalError = error;
+    buffer = [];
+    inFlight = 0;
+    clearDebounce();
+    notify();
+    options.onError?.(error.message);
+    return error;
+  }
+
   async function sendLoop() {
+    if (fatalError) throw fatalError;
     clearDebounce();
     while (buffer.length > 0) {
+      if (fatalError) throw fatalError;
       const batch = buffer;
       buffer = [];
       inFlight = batch.length;
@@ -72,18 +90,21 @@ export function createMatchSyncQueue(options: {
       }
       inFlight = 0;
       if (!sent) {
-        const retriable = isRetriableSyncError(lastError);
-        if (retriable) buffer = [...batch, ...buffer];
-        notify();
-        const message = lastError instanceof Error ? lastError.message : "事件同步失敗";
-        options.onError?.(message);
-        throw lastError instanceof Error ? lastError : new Error(message);
+        if (isRetriableSyncError(lastError)) {
+          buffer = [...batch, ...buffer];
+          notify();
+          const error = toError(lastError, "事件同步失敗");
+          options.onError?.(error.message);
+          throw error;
+        }
+        throw latchFatal(lastError);
       }
       notify();
     }
   }
 
   function flush() {
+    if (fatalError) return Promise.reject(fatalError);
     const next = chain.then(sendLoop, sendLoop);
     chain = next.then(
       () => undefined,
@@ -93,6 +114,7 @@ export function createMatchSyncQueue(options: {
   }
 
   function enqueue(event: MatchEventInput) {
+    if (fatalError) return;
     buffer.push(event);
     notify();
     clearDebounce();
