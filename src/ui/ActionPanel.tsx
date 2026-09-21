@@ -3,6 +3,9 @@ import { getBuilding } from "../engine";
 import { GOOD_ZH, ROLE_ZH } from "./labels";
 import type { Role } from "../engine/types";
 import { GameIcon } from "./icons";
+import { Tooltip } from "./Tooltip";
+
+export const MAYOR_CONFIRM_BLOCKED = "尚有殖民者未安置，請先在自己的玩家板上安置完畢。";
 
 export function ActionPanel({
   legal,
@@ -11,6 +14,7 @@ export function ActionPanel({
   prompt,
   activeRole,
   roleOwnerName,
+  phaseType,
 }: {
   legal: Action[];
   onAct: (action: Action) => void;
@@ -18,11 +22,27 @@ export function ActionPanel({
   prompt: string;
   activeRole?: Role | null;
   roleOwnerName?: string | null;
+  phaseType?: string;
 }) {
   const leftover = legal.filter((a) => !isBoardMapped(a) && a.type !== "mayorDone");
   const mayorDone = legal.find((a) => a.type === "mayorDone");
-  const mayorTurn = legal.some(
-    (a) => a.type === "mayorPlace" || a.type === "mayorRemove" || a.type === "mayorDone",
+  const mayorTurn =
+    phaseType === "mayorAssign" ||
+    legal.some(
+      (a) => a.type === "mayorPlace" || a.type === "mayorRemove" || a.type === "mayorDone",
+    );
+  const mayorBlocked = mayorTurn && !busy && !mayorDone ? MAYOR_CONFIRM_BLOCKED : null;
+  const confirmDisabled = busy || !mayorDone;
+  const confirmButton = (
+    <button
+      type="button"
+      className="act-confirm"
+      disabled={confirmDisabled}
+      onClick={() => mayorDone && onAct(mayorDone)}
+      aria-label={mayorBlocked ? `確定：${mayorBlocked}` : "確定"}
+    >
+      確定
+    </button>
   );
   return (
     <aside className="action-panel">
@@ -44,15 +64,14 @@ export function ActionPanel({
             {describe(action)}
           </button>
         ))}
-        {mayorTurn && (
-          <button
-            className="act-confirm"
-            disabled={busy || !mayorDone}
-            onClick={() => mayorDone && onAct(mayorDone)}
-          >
-            確定
-          </button>
-        )}
+        {mayorTurn &&
+          (mayorBlocked ? (
+            <Tooltip content={mayorBlocked} className="act-confirm-wrap">
+              {confirmButton}
+            </Tooltip>
+          ) : (
+            confirmButton
+          ))}
       </div>
     </aside>
   );

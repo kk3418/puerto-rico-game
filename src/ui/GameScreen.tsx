@@ -20,6 +20,7 @@ import { PlayerBoard } from "./PlayerBoard";
 import { Dialog } from "./Dialog";
 import { phasePrompt } from "./labels";
 import { useMatchSync } from "./useMatchSync";
+import { PLAYER_BOARD_PANEL_ID, PlayerSeats, seatTabOrder } from "./PlayerSeats";
 import "./GameScreen.css";
 
 export function GameScreen({
@@ -57,6 +58,9 @@ export function GameScreen({
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<null | "leave">(null);
   const [logOpen, setLogOpen] = useState(false);
+  const [selectedPlayerIndex, setSelectedPlayerIndex] = useState(() =>
+    Math.max(0, startRef.current!.players.findIndex((p) => p.isHuman)),
+  );
   const logRef = useRef<HTMLElement>(null);
   const logToggleRef = useRef<HTMLButtonElement>(null);
   const logListRef = useRef<HTMLOListElement>(null);
@@ -67,12 +71,15 @@ export function GameScreen({
   const [finishing, setFinishing] = useState(false);
   const { enqueue, flush, pending, syncError } = useMatchSync(matchId, nextSeq);
 
+  const enqueueRef = useRef(enqueue);
+  enqueueRef.current = enqueue;
+
   useEffect(() => {
     const human = humanRef.current;
     let cancelled = false;
     let delayTimer: ReturnType<typeof setTimeout> | undefined;
     let delayResolve: (() => void) | undefined;
-    const initial = startRef.current!;
+    const initial = stateRef.current;
     const agents: Record<string, PlayerAgent> = {};
     for (const p of initial.players) {
       agents[p.id] = p.isHuman ? human : new HeuristicAgent();
@@ -85,9 +92,13 @@ export function GameScreen({
         if (idx === null) break;
         const player = current.players[idx]!;
         const legal = getLegalActions(current);
-        if (legal.length === 0) break;
+        if (legal.length === 0) {
+          throw new Error(`${player.name}在${current.phase.type}沒有合法行動`);
+        }
         const agent = agents[player.id];
-        if (!agent) break;
+        if (!agent) {
+          throw new Error(`找不到代理人：${player.id}`);
+        }
         setTurnSeat(idx);
         if (player.isHuman) {
           setBusy(false);
@@ -106,7 +117,8 @@ export function GameScreen({
         if (cancelled) return;
         const before = current;
         current = await dispatchAction(current, action, player.id);
-        enqueue(before, action, idx);
+        if (cancelled) return;
+        enqueueRef.current(before, action, idx);
         setState(current);
         const pause = agent.tablePauseAfterActionMs?.() ?? 0;
         if (pause > 0) {
@@ -120,6 +132,7 @@ export function GameScreen({
 
     void loop(initial).catch((err: Error) => {
       if (!cancelled && err.message !== "cancelled") {
+        console.error(err);
         setError(err.message);
         setBusy(false);
         setAwaitingHuman(false);
@@ -143,7 +156,7 @@ export function GameScreen({
       delayResolve?.();
       human.cancel();
     };
-  }, [difficulty, enqueue, playerCount]);
+  }, [difficulty, playerCount]);
 
   const completeFinish = useCallback(async () => {
     await flush();
@@ -227,7 +240,7 @@ export function GameScreen({
 
   async function onLeaveAbandon() {
     try {
-      await flush();
+      await flush().catch(() => undefined);
       if (!stateRef.current.gameOver) {
         await abandonMatch(matchId);
       }
@@ -267,11 +280,8 @@ export function GameScreen({
   const legal = getLegalActions(state);
   const humanTurn = awaitingHuman && !busy;
   const youIndex = Math.max(0, state.players.findIndex((p) => p.isHuman));
-  const you = state.players[youIndex]!;
-  const others = clockwiseFrom(youIndex, state.players.length).map((playerIndex) => ({
-    player: state.players[playerIndex]!,
-    playerIndex,
-  }));
+  const selectedPlayer = state.players[selectedPlayerIndex] ?? state.players[youIndex]!;
+  const selectedIsYou = selectedPlayerIndex === youIndex;
 
   return (
     <div className="table">
@@ -280,7 +290,7 @@ export function GameScreen({
         <p>
           第 {state.round} 輪 · 總督 {state.players[state.governorIndex]?.name}
           {state.endTriggered ? " · 終局已觸發" : ""}
-          {pending > 0 ? " · 同步中" : ""}
+          {syncError ? " · 同步失敗" : pending > 0 ? " · 同步中" : ""}
         </p>
         <div className="table-actions">
           <button
@@ -337,7 +347,40 @@ export function GameScreen({
         </Dialog>
       )}
 
-      <main className={`table-arena seats-${state.players.length}`}>
+      <main className="table-arena">
+        <div className="arena-players">
+          <PlayerSeats
+            seats={seatTabOrder(youIndex, state.players.length).map((playerIndex) => ({
+              player: state.players[playerIndex]!,
+              playerIndex,
+            }))}
+            selectedIndex={selectedPlayerIndex}
+            turnSeat={turnSeat}
+            governorIndex={state.governorIndex}
+            onSelect={setSelectedPlayerIndex}
+          />
+          <div
+            className="player-board-stage"
+            role="tabpanel"
+            id={PLAYER_BOARD_PANEL_ID}
+            aria-labelledby={`player-seat-tab-${selectedPlayer.id}`}
+          >
+            <PlayerBoard
+              key={selectedPlayer.id}
+              player={selectedPlayer}
+              self={selectedIsYou}
+              acting={selectedIsYou ? humanTurn : turnSeat === selectedPlayerIndex}
+              legal={selectedIsYou && humanTurn ? legal : []}
+              onAct={onAct}
+              humanTurn={selectedIsYou && humanTurn}
+              hideVp={!selectedIsYou}
+              chosenRole={chosenRoleFor(state, selectedPlayerIndex)}
+              isActiveRoleOwner={state.activeRoleOwnerIndex === selectedPlayerIndex}
+              isGovernor={state.governorIndex === selectedPlayerIndex}
+              mayorReceived={receivedForPlayer(state, selectedPlayerIndex)}
+            />
+          </div>
+        </div>
         <div className="arena-board">
           <Board state={state} legal={humanTurn ? legal : []} onAct={onAct} humanTurn={humanTurn} />
         </div>
@@ -347,44 +390,13 @@ export function GameScreen({
             onAct={onAct}
             busy={busy}
             prompt={phasePrompt(state.phase.type)}
+            phaseType={humanTurn ? state.phase.type : undefined}
             activeRole={state.phase.type === "chooseRole" ? null : state.activeRole}
             roleOwnerName={
               state.phase.type !== "chooseRole" && state.activeRoleOwnerIndex != null
                 ? state.players[state.activeRoleOwnerIndex]?.name
                 : null
             }
-          />
-        </div>
-        {others.map(({ player, playerIndex }, index) => (
-          <div className={`player-seat seat-${index + 1}`} key={player.id}>
-            <PlayerBoard
-              player={player}
-              self={false}
-              acting={turnSeat === playerIndex}
-              legal={[]}
-              onAct={onAct}
-              humanTurn={false}
-              hideVp
-              chosenRole={chosenRoleFor(state, playerIndex)}
-              isActiveRoleOwner={state.activeRoleOwnerIndex === playerIndex}
-              isGovernor={state.governorIndex === playerIndex}
-              mayorReceived={receivedForPlayer(state, playerIndex)}
-            />
-          </div>
-        ))}
-        <div className="player-seat self-seat">
-          <PlayerBoard
-            player={you}
-            self
-            acting={turnSeat === youIndex}
-            legal={humanTurn ? legal : []}
-            onAct={onAct}
-            humanTurn={humanTurn}
-            hideVp={false}
-            chosenRole={chosenRoleFor(state, youIndex)}
-            isActiveRoleOwner={state.activeRoleOwnerIndex === youIndex}
-            isGovernor={state.governorIndex === youIndex}
-            mayorReceived={receivedForPlayer(state, youIndex)}
           />
         </div>
       </main>
@@ -396,9 +408,4 @@ function receivedForPlayer(state: GameState, playerIndex: number): number | unde
   return state.phase.type === "mayorAssign" && state.phase.actorIndex === playerIndex
     ? state.phase.received
     : undefined;
-}
-
-/** Seats clockwise around the table, starting with the player to the human's left. */
-function clockwiseFrom(startIndex: number, count: number): number[] {
-  return Array.from({ length: count - 1 }, (_, offset) => (startIndex + offset + 1) % count);
 }
