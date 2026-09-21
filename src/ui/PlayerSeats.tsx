@@ -2,6 +2,16 @@ import { useRef, type KeyboardEvent } from "react";
 
 export const PLAYER_BOARD_PANEL_ID = "player-board-panel";
 
+/** Seats clockwise around the table, starting with the player to `startIndex`'s left. */
+export function clockwiseFrom(startIndex: number, count: number): number[] {
+  return Array.from({ length: count - 1 }, (_, offset) => (startIndex + offset + 1) % count);
+}
+
+/** Human first, then opponents clockwise from their left. */
+export function seatTabOrder(youIndex: number, count: number): number[] {
+  return [youIndex, ...clockwiseFrom(youIndex, count)];
+}
+
 export function nextSeatIndex(current: number, key: string, count: number): number | null {
   if (count <= 0) return null;
   switch (key) {
@@ -21,42 +31,45 @@ export function nextSeatIndex(current: number, key: string, count: number): numb
 }
 
 export function PlayerSeats({
-  players,
+  seats,
   selectedIndex,
   turnSeat,
   governorIndex,
   onSelect,
 }: {
-  players: Array<{ id: string; name: string }>;
+  seats: Array<{ player: { id: string; name: string; isHuman: boolean }; playerIndex: number }>;
   selectedIndex: number;
   turnSeat: number | null;
   governorIndex: number;
-  onSelect: (index: number) => void;
+  onSelect: (playerIndex: number) => void;
 }) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  function selectSeat(index: number) {
-    onSelect(index);
-    tabRefs.current[index]?.focus();
+  function selectDisplaySeat(displayIndex: number) {
+    const seat = seats[displayIndex];
+    if (!seat) return;
+    onSelect(seat.playerIndex);
+    tabRefs.current[displayIndex]?.focus();
   }
 
-  function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    const next = nextSeatIndex(index, event.key, players.length);
+  function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, displayIndex: number) {
+    const next = nextSeatIndex(displayIndex, event.key, seats.length);
     if (next === null) return;
     event.preventDefault();
-    selectSeat(next);
+    selectDisplaySeat(next);
   }
 
   return (
     <div className="player-seats" role="tablist" aria-label="玩家座位">
-      {players.map((player, index) => {
-        const selected = index === selectedIndex;
-        const acting = index === turnSeat;
+      {seats.map((seat, displayIndex) => {
+        const { player, playerIndex } = seat;
+        const selected = playerIndex === selectedIndex;
+        const acting = playerIndex === turnSeat;
         return (
           <button
             key={player.id}
             ref={(node) => {
-              tabRefs.current[index] = node;
+              tabRefs.current[displayIndex] = node;
             }}
             type="button"
             role="tab"
@@ -65,15 +78,15 @@ export function PlayerSeats({
             aria-selected={selected}
             aria-controls={PLAYER_BOARD_PANEL_ID}
             tabIndex={selected ? 0 : -1}
-            onClick={() => selectSeat(index)}
-            onKeyDown={(event) => onTabKeyDown(event, index)}
+            onClick={() => selectDisplaySeat(displayIndex)}
+            onKeyDown={(event) => onTabKeyDown(event, displayIndex)}
           >
-            <span className="seat-number">座位 {index + 1}</span>
+            <span className="seat-number">座位 {playerIndex + 1}</span>
             <strong>
               {player.name}
-              {index === 0 ? "（你）" : ""}
+              {player.isHuman ? "（你）" : ""}
             </strong>
-            {index === governorIndex && <span className="seat-status">總督</span>}
+            {playerIndex === governorIndex && <span className="seat-status">總督</span>}
             {acting && <span className="seat-status">行動中</span>}
           </button>
         );

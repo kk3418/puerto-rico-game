@@ -20,7 +20,7 @@ import { PlayerBoard } from "./PlayerBoard";
 import { Dialog } from "./Dialog";
 import { phasePrompt } from "./labels";
 import { useMatchSync } from "./useMatchSync";
-import { PLAYER_BOARD_PANEL_ID, PlayerSeats } from "./PlayerSeats";
+import { PLAYER_BOARD_PANEL_ID, PlayerSeats, seatTabOrder } from "./PlayerSeats";
 import "./GameScreen.css";
 
 export function GameScreen({
@@ -58,7 +58,9 @@ export function GameScreen({
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<null | "leave">(null);
   const [logOpen, setLogOpen] = useState(false);
-  const [selectedPlayerIndex, setSelectedPlayerIndex] = useState(0);
+  const [selectedPlayerIndex, setSelectedPlayerIndex] = useState(() =>
+    Math.max(0, startRef.current!.players.findIndex((p) => p.isHuman)),
+  );
   const logRef = useRef<HTMLElement>(null);
   const logToggleRef = useRef<HTMLButtonElement>(null);
   const logListRef = useRef<HTMLOListElement>(null);
@@ -277,8 +279,9 @@ export function GameScreen({
 
   const legal = getLegalActions(state);
   const humanTurn = awaitingHuman && !busy;
-  const selectedPlayer = state.players[selectedPlayerIndex] ?? state.players[0]!;
-  const selectedIsYou = selectedPlayerIndex === 0;
+  const youIndex = Math.max(0, state.players.findIndex((p) => p.isHuman));
+  const selectedPlayer = state.players[selectedPlayerIndex] ?? state.players[youIndex]!;
+  const selectedIsYou = selectedPlayerIndex === youIndex;
 
   return (
     <div className="table">
@@ -347,7 +350,10 @@ export function GameScreen({
       <main className="table-arena">
         <div className="arena-players">
           <PlayerSeats
-            players={state.players}
+            seats={seatTabOrder(youIndex, state.players.length).map((playerIndex) => ({
+              player: state.players[playerIndex]!,
+              playerIndex,
+            }))}
             selectedIndex={selectedPlayerIndex}
             turnSeat={turnSeat}
             governorIndex={state.governorIndex}
