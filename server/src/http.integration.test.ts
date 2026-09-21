@@ -49,20 +49,27 @@ describe.skipIf(!ready)("HTTP integration", () => {
     const match = await createGuestMatch(agent, { nickname, seed: 7 });
     const first = firstLegalAction(7, nickname);
     const alt = secondLegalAction(7, nickname);
+    const play = { playToken: match.playToken };
 
     await agent
       .post(`/api/matches/${match.id}/events`)
-      .send({ events: [openingEvent({ type: "mayorDone" })] })
+      .send({ ...play, events: [openingEvent({ type: "mayorDone" })] })
       .expect(400);
 
     await agent
       .post(`/api/matches/${match.id}/events`)
-      .send({ events: [openingEvent(first, 2)] })
+      .send({ ...play, events: [openingEvent(first, 2)] })
+      .expect(409);
+
+    await agent
+      .post(`/api/matches/${match.id}/events`)
+      .send({ playToken: "stale-token", events: [openingEvent(first)] })
       .expect(409);
 
     await agent
       .post(`/api/matches/${match.id}/events`)
       .send({
+        ...play,
         events: [
           {
             seq: 1,
@@ -79,19 +86,27 @@ describe.skipIf(!ready)("HTTP integration", () => {
 
     const dup = await agent
       .post(`/api/matches/${match.id}/events`)
-      .send({ events: [openingEvent(first)] })
+      .send({ ...play, events: [openingEvent(first)] })
       .expect(200);
     expect(dup.body.appended).toBe(0);
     expect(dup.body.eventCount).toBe(1);
 
     await agent
       .post(`/api/matches/${match.id}/events`)
-      .send({ events: [openingEvent(alt)] })
+      .send({ ...play, events: [openingEvent(alt)] })
       .expect(409);
 
     const live = await agent.get(`/api/matches/${match.id}/state`).expect(200);
     expect(live.body.state.gameOver).toBe(false);
     expect(live.body.eventCount).toBe(1);
+    expect(live.body.playToken).toBeTruthy();
+    expect(live.body.playToken).not.toBe(match.playToken);
+
+    const stale = await agent
+      .post(`/api/matches/${match.id}/events`)
+      .send({ playToken: match.playToken, events: [openingEvent(first)] })
+      .expect(409);
+    expect(stale.body.error).toMatch(/另一個視窗/);
 
     const stored = await prisma.matchEvent.findFirst({ where: { matchId: match.id } });
     const expected = describeActionContext(
@@ -116,7 +131,7 @@ describe.skipIf(!ready)("HTTP integration", () => {
     const agent = await guestAgent(nickname);
     const match = await createGuestMatch(agent, { nickname, seed: 2024 });
     const recorded = await recordSoloActions({ seed: 2024, humanName: nickname });
-    await postEventChunks(agent, match.id, recorded.events);
+    await postEventChunks(agent, match.id, recorded.events, match.playToken);
 
     const user = await prisma.user.create({
       data: { displayName: nickname, email: "finish@test.invalid" },
@@ -158,7 +173,7 @@ describe.skipIf(!ready)("HTTP integration", () => {
     const guestId = me.body.guest.id as string;
     const match = await createGuestMatch(agent, { nickname, seed: 2024 });
     const recorded = await recordSoloActions({ seed: 2024, humanName: nickname });
-    await postEventChunks(agent, match.id, recorded.events);
+    await postEventChunks(agent, match.id, recorded.events, match.playToken);
     const finished = await agent.post(`/api/matches/${match.id}/finish`).expect(200);
     expect(finished.body.verified).toBe(true);
 
@@ -181,4 +196,26 @@ describe.skipIf(!ready)("HTTP integration", () => {
     expect(stats?.totalScore).toBe(humanTotal);
     expect(stats?.bestScore).toBe(humanTotal);
   }, 20_000);
+
+  it("hides the seed off solo and withholds saves that still need consent", async () => {
+    const agent = await guestAgent("__it__public");
+    const match = await createGuestMatch(agent, { nickname: "__it__public", seed: 11 });
+    expect(match.seed).toBe(11);
+    expect(match.playToken).toBeTruthy();
+
+    await prisma.match.update({ where: { id: match.id }, data: { mode: "online" } });
+    const listed = await agent.get(`/api/matches/${match.id}`).expect(200);
+    expect(listed.body.seed).toBeNull();
+    expect(listed.body.playToken).toBeUndefined();
+
+    await agent
+      .put(`/api/matches/${match.id}/save`)
+      .send({ state: { round: 1 }, schemaVersion: "1.0" })
+      .expect(200);
+    await agent.get(`/api/matches/${match.id}/save`).expect(200);
+
+    await prisma.matchSave.update({ where: { matchId: match.id }, data: { consentRequired: true } });
+    const blocked = await agent.get(`/api/matches/${match.id}/save`).expect(403);
+    expect(blocked.body.error).toMatch(/同意/);
+  });
 });

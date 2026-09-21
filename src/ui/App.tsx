@@ -22,6 +22,7 @@ export type PlaySession = {
   nickname: string;
   initialState?: GameState;
   nextSeq: number;
+  playToken: string;
   nonce: number;
 };
 
@@ -42,15 +43,22 @@ export function App() {
   }, []);
 
   const enterMatch = useCallback((match: MatchSummary, state?: GameState) => {
+    if (!match.playToken) {
+      throw new Error("無法開始對局");
+    }
+    if (match.seed == null && !state) {
+      throw new Error("無法開始對局");
+    }
     writeLastMatchId(match.id);
     setPlay({
       matchId: match.id,
       playerCount: match.playerCount,
       difficulty: match.difficulty,
-      seed: match.seed,
+      seed: match.seed ?? 0,
       nickname: match.humanName,
       initialState: state,
       nextSeq: match.eventCount + 1,
+      playToken: match.playToken,
       nonce: Date.now(),
     });
   }, []);
@@ -154,6 +162,7 @@ export function App() {
       nickname={play.nickname}
       initialState={play.initialState}
       nextSeq={play.nextSeq}
+      playToken={play.playToken}
       onExit={() => {
         void refreshAuth().catch(() => undefined);
         setPlay(null);

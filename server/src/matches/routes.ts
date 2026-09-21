@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { Router } from "express";
 import { z } from "zod";
@@ -7,6 +8,7 @@ import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, requireUser } from "../identity";
 import { canAccessMatch } from "./access";
+import { canReadMatchSave, publicSeed } from "./public";
 import { describeActionContext, isAction, isSupportedSaveSchema, replayMatch, replayStoredActions, SAVE_SCHEMA_VERSION } from "./replay";
 import { replayCache } from "./replayCache";
 import { classifySeq } from "./seq";
@@ -111,7 +113,7 @@ function matchSummary(match: {
     mode: match.mode,
     playerCount: match.playerCount,
     difficulty: match.difficulty,
-    seed: match.seed,
+    seed: publicSeed(match.mode, match.seed),
     humanName: match.humanName,
     endReason: match.endReason,
     startedAt: match.startedAt,
@@ -187,12 +189,13 @@ matchesRouter.post("/", async (req, res) => {
       difficulty: body.difficulty,
       seed,
       humanName: body.nickname,
+      playToken: randomUUID(),
       participants: { create: participants },
     },
     include: { participants: { orderBy: { seatIndex: "asc" } }, save: true, _count: { select: { events: true } } },
   });
 
-  res.status(201).json(matchSummary(match));
+  res.status(201).json({ ...matchSummary(match), playToken: match.playToken });
 });
 
 matchesRouter.get("/:id", async (req, res) => {
@@ -243,7 +246,15 @@ matchesRouter.get("/:id/state", async (req, res) => {
     throw new HttpError(409, "對局紀錄無法重放");
   }
 
-  res.json({ ...matchSummary(match), state: replayed.state });
+  const claimed = await prisma.match.update({
+    where: { id: match.id },
+    data: { playToken: randomUUID() },
+  });
+  if (!claimed.playToken) {
+    throw new HttpError(500, "無法鎖定對局");
+  }
+
+  res.json({ ...matchSummary(match), state: replayed.state, playToken: claimed.playToken });
 });
 
 matchesRouter.post("/:id/events", async (req, res) => {
@@ -251,7 +262,15 @@ matchesRouter.post("/:id/events", async (req, res) => {
   const match = await loadOwnedMatch(matchIdParam(req), identity);
   assertPlaying(match.status);
 
-  const body = z.object({ events: z.array(eventSchema).min(1).max(200) }).parse(req.body);
+  const body = z
+    .object({
+      playToken: z.string().min(1),
+      events: z.array(eventSchema).min(1).max(200),
+    })
+    .parse(req.body);
+  if (!match.playToken || body.playToken !== match.playToken) {
+    throw new HttpError(409, "此對局已在另一個視窗進行，請重新整理");
+  }
   const incoming = [...body.events].sort((a, b) => a.seq - b.seq);
   const stored = await prisma.matchEvent.findMany({
     where: { matchId: match.id },
@@ -531,6 +550,9 @@ matchesRouter.get("/:id/save", async (req, res) => {
   }
   if (!isSupportedSaveSchema(match.save.schemaVersion)) {
     throw new HttpError(409, "存檔版本過舊或未知，無法讀取");
+  }
+  if (!canReadMatchSave(match.save)) {
+    throw new HttpError(403, "需全體玩家同意才能讀取存檔");
   }
   res.json({
     matchId: match.save.matchId,
