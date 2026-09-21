@@ -30,6 +30,7 @@ export {
   warehouseTypes,
   producedAmount,
   isLegalAction,
+  vpTokenCount,
 } from "./helpers";
 export { scoreGame, scorePlayer, goodsAndGold, buildingPrintedVp } from "./scoring";
 export { cloneViaJson, assertSerializable } from "./serialize";

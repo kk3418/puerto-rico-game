@@ -123,6 +123,12 @@ export function awardVp(state: GameState, player: PlayerState, amount: number): 
   }
 }
 
+/** Number of physical VP tokens after exchanging every five 1-point tokens. */
+export function vpTokenCount(vpPoints: number): number {
+  const points = Math.max(0, Math.floor(vpPoints));
+  return Math.floor(points / 5) + (points % 5);
+}
+
 export function triggerEnd(state: GameState, reason: string): void {
   if (!state.endTriggered) {
     state.endTriggered = true;

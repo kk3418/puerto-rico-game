@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { postMatchEvents } from "../api/matches";
 import type { MatchEventInput } from "../api/types";
 import type { Action, GameState } from "../engine";
@@ -17,9 +17,16 @@ export function useMatchSync(matchId: string, startSeq: number, playToken: strin
     queueRef.current = createMatchSyncQueue({
       post: (events) => postMatchEvents(matchIdRef.current, events, playTokenRef.current).then(() => undefined),
       onPending: setPending,
-      onError: setSyncError,
+      onError: (message) => {
+        setSyncError(message);
+        if (message) console.error(message);
+      },
     });
   }
+
+  useEffect(() => {
+    return () => queueRef.current?.abort();
+  }, []);
 
   const flush = useCallback(() => queueRef.current!.flush(), []);
 

@@ -4,13 +4,18 @@ import type { MatchEventInput } from "../api/types";
 export type MatchSyncQueue = {
   enqueue: (event: MatchEventInput) => void;
   flush: () => Promise<void>;
+  abort: () => void;
 };
 
-export function isRetriableSyncError(err: unknown): boolean {
+function isRetriableSyncError(err: unknown): boolean {
   if (err instanceof ApiError) {
-    return err.status >= 500 || err.status === 429;
+    return err.status >= 500 || err.status === 408 || err.status === 429;
   }
   return true;
+}
+
+function toError(err: unknown, fallback: string): Error {
+  return err instanceof Error ? err : new Error(fallback);
 }
 
 export function createMatchSyncQueue(options: {
@@ -35,25 +40,12 @@ export function createMatchSyncQueue(options: {
   let inFlight = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let chain = Promise.resolve();
-  let fatal: Error | null = null;
+  let fatalError: Error | null = null;
+  let aborted = false;
+  let resumeSleep: (() => void) | undefined;
 
   function notify() {
     options.onPending?.(buffer.length + inFlight);
-  }
-
-  function errorMessage(err: unknown): string {
-    return err instanceof Error ? err.message : "事件同步失敗";
-  }
-
-  function markFatal(err: unknown): Error {
-    const next = err instanceof Error ? err : new Error(errorMessage(err));
-    fatal = next;
-    buffer = [];
-    inFlight = 0;
-    clearDebounce();
-    notify();
-    options.onError?.(next.message);
-    return next;
   }
 
   function clearDebounce() {
@@ -63,45 +55,101 @@ export function createMatchSyncQueue(options: {
     }
   }
 
+  function wait(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      resumeSleep = resolve;
+      void sleep(ms).then(() => {
+        if (resumeSleep === resolve) resumeSleep = undefined;
+        resolve();
+      });
+    });
+  }
+
+  function stopSleep() {
+    resumeSleep?.();
+    resumeSleep = undefined;
+  }
+
+  function settleAbort(): void {
+    buffer = [];
+    inFlight = 0;
+    notify();
+  }
+
+  function latchFatal(err: unknown): Error {
+    const error = toError(err, "事件同步失敗");
+    fatalError = error;
+    buffer = [];
+    inFlight = 0;
+    clearDebounce();
+    notify();
+    options.onError?.(error.message);
+    return error;
+  }
+
   async function sendLoop() {
-    if (fatal) throw fatal;
+    if (aborted) return;
+    if (fatalError) throw fatalError;
     clearDebounce();
     while (buffer.length > 0) {
+      if (aborted) {
+        settleAbort();
+        return;
+      }
+      if (fatalError) throw fatalError;
       const batch = buffer;
       buffer = [];
       inFlight = batch.length;
       notify();
       let lastError: unknown;
       let sent = false;
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const attempts = Math.max(1, maxAttempts);
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        if (aborted) {
+          settleAbort();
+          return;
+        }
         try {
           await options.post(batch);
+          if (aborted) {
+            settleAbort();
+            return;
+          }
           sent = true;
           options.onError?.(null);
           break;
         } catch (err) {
+          if (aborted) {
+            settleAbort();
+            return;
+          }
           lastError = err;
-          if (!isRetriableSyncError(err)) {
-            throw markFatal(err);
-          }
-          if (attempt < maxAttempts - 1) {
-            await sleep(retryDelay(attempt));
-          }
+          if (!isRetriableSyncError(err) || attempt >= attempts - 1) break;
+          await wait(retryDelay(attempt));
         }
       }
       inFlight = 0;
+      if (aborted) {
+        settleAbort();
+        return;
+      }
       if (!sent) {
-        buffer = [...batch, ...buffer];
-        notify();
-        const message = errorMessage(lastError);
-        options.onError?.(message);
-        throw lastError instanceof Error ? lastError : new Error(message);
+        if (isRetriableSyncError(lastError)) {
+          buffer = [...batch, ...buffer];
+          notify();
+          const error = toError(lastError, "事件同步失敗");
+          options.onError?.(error.message);
+          throw error;
+        }
+        throw latchFatal(lastError);
       }
       notify();
     }
   }
 
   function flush() {
+    if (aborted) return Promise.resolve();
+    if (fatalError) return Promise.reject(fatalError);
     const next = chain.then(sendLoop, sendLoop);
     chain = next.then(
       () => undefined,
@@ -111,10 +159,7 @@ export function createMatchSyncQueue(options: {
   }
 
   function enqueue(event: MatchEventInput) {
-    if (fatal) {
-      options.onError?.(fatal.message);
-      return;
-    }
+    if (aborted || fatalError) return;
     buffer.push(event);
     notify();
     clearDebounce();
@@ -124,5 +169,12 @@ export function createMatchSyncQueue(options: {
     }, debounceMs);
   }
 
-  return { enqueue, flush };
+  function abort() {
+    aborted = true;
+    clearDebounce();
+    stopSleep();
+    settleAbort();
+  }
+
+  return { enqueue, flush, abort };
 }
