@@ -98,7 +98,7 @@ export async function createGuestMatch(
       seed: input.seed ?? 2024,
     })
     .expect(201);
-  return res.body as { id: string; eventCount: number; seed: number; humanName: string };
+  return res.body as { id: string; eventCount: number; seed: number; humanName: string; playToken: string };
 }
 
 export async function recordSoloActions(input: {
@@ -140,10 +140,18 @@ export async function recordSoloActions(input: {
   return { events, scores: scoreGame(state) };
 }
 
-export async function postEventChunks(agent: TestAgent, matchId: string, events: MatchEventInput[]) {
+export async function postEventChunks(
+  agent: TestAgent,
+  matchId: string,
+  events: MatchEventInput[],
+  playToken: string,
+) {
   const size = 200;
   for (let i = 0; i < events.length; i += size) {
-    await agent.post(`/api/matches/${matchId}/events`).send({ events: events.slice(i, i + size) }).expect(200);
+    await agent
+      .post(`/api/matches/${matchId}/events`)
+      .send({ playToken, events: events.slice(i, i + size) })
+      .expect(200);
   }
 }
 

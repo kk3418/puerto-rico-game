@@ -4,16 +4,18 @@ import type { MatchEventInput } from "../api/types";
 import type { Action, GameState } from "../engine";
 import { createMatchSyncQueue, type MatchSyncQueue } from "./matchSyncQueue";
 
-export function useMatchSync(matchId: string, startSeq: number) {
+export function useMatchSync(matchId: string, startSeq: number, playToken: string) {
   const seqRef = useRef(startSeq);
   const matchIdRef = useRef(matchId);
   matchIdRef.current = matchId;
+  const playTokenRef = useRef(playToken);
+  playTokenRef.current = playToken;
   const [pending, setPending] = useState(0);
   const [syncError, setSyncError] = useState<string | null>(null);
   const queueRef = useRef<MatchSyncQueue | null>(null);
   if (!queueRef.current) {
     queueRef.current = createMatchSyncQueue({
-      post: (events) => postMatchEvents(matchIdRef.current, events).then(() => undefined),
+      post: (events) => postMatchEvents(matchIdRef.current, events, playTokenRef.current).then(() => undefined),
       onPending: setPending,
       onError: setSyncError,
     });

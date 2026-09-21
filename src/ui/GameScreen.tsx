@@ -30,6 +30,7 @@ export function GameScreen({
   nickname,
   initialState,
   nextSeq,
+  playToken,
   onExit,
 }: {
   matchId: string;
@@ -39,6 +40,7 @@ export function GameScreen({
   nickname: string;
   initialState?: GameState;
   nextSeq: number;
+  playToken: string;
   onExit: () => void;
 }) {
   const humanRef = useRef(new HumanAgent());
@@ -65,7 +67,7 @@ export function GameScreen({
   const [verified, setVerified] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
-  const { enqueue, flush, pending, syncError } = useMatchSync(matchId, nextSeq);
+  const { enqueue, flush, pending, syncError } = useMatchSync(matchId, nextSeq, playToken);
 
   useEffect(() => {
     const human = humanRef.current;

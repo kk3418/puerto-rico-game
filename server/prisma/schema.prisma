@@ -54,6 +54,7 @@ model Match {
   endedAt     DateTime?
   status      String    @default("playing")
   verified    Boolean   @default(false)
+  playToken   String?
 
   participants MatchParticipant[]
   events       MatchEvent[]

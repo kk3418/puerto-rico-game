@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { ApiError } from "../api/client";
 import type { MatchEventInput } from "../api/types";
-import { createMatchSyncQueue } from "./matchSyncQueue";
+import { createMatchSyncQueue, isRetriableSyncError } from "./matchSyncQueue";
 
 function event(seq: number): MatchEventInput {
   return {
@@ -87,5 +88,37 @@ describe("createMatchSyncQueue", () => {
     await expect(queue.flush()).rejects.toThrow("network");
     await queue.flush();
     expect(received).toEqual([[3], [3]]);
+  });
+
+  it("does not retry client errors and ignores later enqueues", async () => {
+    let attempts = 0;
+    const errors: Array<string | null> = [];
+    const queue = createMatchSyncQueue({
+      debounceMs: 10_000,
+      maxAttempts: 3,
+      async post() {
+        attempts += 1;
+        throw new ApiError(400, "事件無法套用");
+      },
+      onError(message) {
+        errors.push(message);
+      },
+    });
+    queue.enqueue(event(1));
+    await expect(queue.flush()).rejects.toThrow("事件無法套用");
+    queue.enqueue(event(2));
+    await expect(queue.flush()).rejects.toThrow("事件無法套用");
+    expect(attempts).toBe(1);
+    expect(errors.at(-1)).toBe("事件無法套用");
+  });
+});
+
+describe("isRetriableSyncError", () => {
+  it("retries server and rate-limit failures, not other 4xx", () => {
+    expect(isRetriableSyncError(new ApiError(500, "伺服器錯誤"))).toBe(true);
+    expect(isRetriableSyncError(new ApiError(429, "稍後再試"))).toBe(true);
+    expect(isRetriableSyncError(new ApiError(400, "事件無效"))).toBe(false);
+    expect(isRetriableSyncError(new ApiError(409, "另一個視窗"))).toBe(false);
+    expect(isRetriableSyncError(new Error("network"))).toBe(true);
   });
 });

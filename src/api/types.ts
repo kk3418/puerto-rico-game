@@ -39,7 +39,7 @@ export type MatchSummary = {
   mode: string;
   playerCount: PlayerCount;
   difficulty: Difficulty;
-  seed: number;
+  seed: number | null;
   humanName: string;
   endReason: string | null;
   startedAt: string;
@@ -48,6 +48,7 @@ export type MatchSummary = {
   verified: boolean;
   eventCount: number;
   hasSave: boolean;
+  playToken?: string | null;
   participants: Array<{
     seatIndex: number;
     nickname: string;
@@ -83,6 +84,7 @@ export type MatchEventInput = {
 
 export type MatchLiveState = MatchSummary & {
   state: GameState;
+  playToken: string;
 };
 
 export type MatchSave = {
