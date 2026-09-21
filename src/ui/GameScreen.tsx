@@ -20,6 +20,7 @@ import { PlayerBoard } from "./PlayerBoard";
 import { Dialog } from "./Dialog";
 import { phasePrompt } from "./labels";
 import { useMatchSync } from "./useMatchSync";
+import { PLAYER_BOARD_PANEL_ID, PlayerSeats } from "./PlayerSeats";
 import "./GameScreen.css";
 
 export function GameScreen({
@@ -345,27 +346,19 @@ export function GameScreen({
 
       <main className="table-arena">
         <div className="arena-players">
-          <nav className="player-seats" aria-label="玩家座位">
-            {state.players.map((player, index) => {
-              const selected = index === selectedPlayerIndex;
-              const acting = index === turnSeat;
-              return (
-                <button
-                  key={player.id}
-                  type="button"
-                  className={`player-seat-tab${selected ? " selected" : ""}${acting ? " acting" : ""}`}
-                  aria-current={selected ? "true" : undefined}
-                  onClick={() => setSelectedPlayerIndex(index)}
-                >
-                  <span className="seat-number">座位 {index + 1}</span>
-                  <strong>{player.name}{index === 0 ? "（你）" : ""}</strong>
-                  {index === state.governorIndex && <span className="seat-status">總督</span>}
-                  {acting && <span className="seat-status">行動中</span>}
-                </button>
-              );
-            })}
-          </nav>
-          <div className="player-board-stage">
+          <PlayerSeats
+            players={state.players}
+            selectedIndex={selectedPlayerIndex}
+            turnSeat={turnSeat}
+            governorIndex={state.governorIndex}
+            onSelect={setSelectedPlayerIndex}
+          />
+          <div
+            className="player-board-stage"
+            role="tabpanel"
+            id={PLAYER_BOARD_PANEL_ID}
+            aria-labelledby={`player-seat-tab-${selectedPlayer.id}`}
+          >
             <PlayerBoard
               key={selectedPlayer.id}
               player={selectedPlayer}
