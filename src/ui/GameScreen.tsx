@@ -89,9 +89,13 @@ export function GameScreen({
         if (idx === null) break;
         const player = current.players[idx]!;
         const legal = getLegalActions(current);
-        if (legal.length === 0) break;
+        if (legal.length === 0) {
+          throw new Error(`${player.name}在${current.phase.type}沒有合法行動`);
+        }
         const agent = agents[player.id];
-        if (!agent) break;
+        if (!agent) {
+          throw new Error(`找不到代理人：${player.id}`);
+        }
         setTurnSeat(idx);
         if (player.isHuman) {
           setBusy(false);
@@ -126,6 +130,7 @@ export function GameScreen({
     void loop(initial).catch((err: Error) => {
       if (!cancelled && err.message !== "cancelled") {
         console.error(err);
+        setError(err.message);
         setBusy(false);
         setAwaitingHuman(false);
       }
