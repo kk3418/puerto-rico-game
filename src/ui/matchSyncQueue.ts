@@ -41,6 +41,8 @@ export function createMatchSyncQueue(options: {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let chain = Promise.resolve();
   let fatalError: Error | null = null;
+  let aborted = false;
+  let resumeSleep: (() => void) | undefined;
 
   function notify() {
     options.onPending?.(buffer.length + inFlight);
@@ -51,6 +53,27 @@ export function createMatchSyncQueue(options: {
       unschedule(timer);
       timer = undefined;
     }
+  }
+
+  function wait(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      resumeSleep = resolve;
+      void sleep(ms).then(() => {
+        if (resumeSleep === resolve) resumeSleep = undefined;
+        resolve();
+      });
+    });
+  }
+
+  function stopSleep() {
+    resumeSleep?.();
+    resumeSleep = undefined;
+  }
+
+  function settleAbort(): void {
+    buffer = [];
+    inFlight = 0;
+    notify();
   }
 
   function latchFatal(err: unknown): Error {
@@ -65,9 +88,14 @@ export function createMatchSyncQueue(options: {
   }
 
   async function sendLoop() {
+    if (aborted) return;
     if (fatalError) throw fatalError;
     clearDebounce();
     while (buffer.length > 0) {
+      if (aborted) {
+        settleAbort();
+        return;
+      }
       if (fatalError) throw fatalError;
       const batch = buffer;
       buffer = [];
@@ -77,18 +105,34 @@ export function createMatchSyncQueue(options: {
       let sent = false;
       const attempts = Math.max(1, maxAttempts);
       for (let attempt = 0; attempt < attempts; attempt++) {
+        if (aborted) {
+          settleAbort();
+          return;
+        }
         try {
           await options.post(batch);
+          if (aborted) {
+            settleAbort();
+            return;
+          }
           sent = true;
           options.onError?.(null);
           break;
         } catch (err) {
+          if (aborted) {
+            settleAbort();
+            return;
+          }
           lastError = err;
           if (!isRetriableSyncError(err) || attempt >= attempts - 1) break;
-          await sleep(retryDelay(attempt));
+          await wait(retryDelay(attempt));
         }
       }
       inFlight = 0;
+      if (aborted) {
+        settleAbort();
+        return;
+      }
       if (!sent) {
         if (isRetriableSyncError(lastError)) {
           buffer = [...batch, ...buffer];
@@ -104,6 +148,7 @@ export function createMatchSyncQueue(options: {
   }
 
   function flush() {
+    if (aborted) return Promise.resolve();
     if (fatalError) return Promise.reject(fatalError);
     const next = chain.then(sendLoop, sendLoop);
     chain = next.then(
@@ -114,7 +159,7 @@ export function createMatchSyncQueue(options: {
   }
 
   function enqueue(event: MatchEventInput) {
-    if (fatalError) return;
+    if (aborted || fatalError) return;
     buffer.push(event);
     notify();
     clearDebounce();
@@ -125,10 +170,10 @@ export function createMatchSyncQueue(options: {
   }
 
   function abort() {
+    aborted = true;
     clearDebounce();
-    buffer = [];
-    inFlight = 0;
-    notify();
+    stopSleep();
+    settleAbort();
   }
 
   return { enqueue, flush, abort };
