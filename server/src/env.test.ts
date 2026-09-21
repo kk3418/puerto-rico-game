@@ -22,5 +22,7 @@ describe("SESSION_SECRET", () => {
   it("rejects committed placeholders even when they are long enough", () => {
     expect(parseSecret("REPLACE_WITH_OPENSSL_RAND_HEX_32").success).toBe(false);
     expect(parseSecret("change-me-to-a-long-random-string").success).toBe(false);
+    expect(parseSecret("dev-only-not-for-production-session-secret").success).toBe(false);
+    expect(parseSecret("test-session-secret-not-for-production-use").success).toBe(false);
   });
 });

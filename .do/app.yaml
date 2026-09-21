@@ -54,16 +54,14 @@ services:
       - key: CLIENT_ORIGIN
         value: ${APP_URL}
         scope: RUN_TIME
-      # Runtime counterpart of VITE_GOOGLE_CLIENT_ID below. Same value.
-      # Leave blank to hide the Google button and play as a guest.
+      # OAuth is optional (guest play works without it). Set values in the
+      # console — do not put empty strings here or `apps update` will wipe them.
+      # Runtime counterpart of VITE_GOOGLE_CLIENT_ID. Same value.
       - key: GOOGLE_CLIENT_ID
-        value: ""
         scope: RUN_TIME
       - key: GITHUB_CLIENT_ID
-        value: ""
         scope: RUN_TIME
       - key: GITHUB_CLIENT_SECRET
-        value: ""
         type: SECRET
         scope: RUN_TIME
       - key: GITHUB_CALLBACK_URL
@@ -82,9 +80,8 @@ static_sites:
     catchall_document: index.html
     envs:
       # Vite inlines this at build time, so it must be BUILD_TIME and must be
-      # set here rather than on the service.
+      # set here rather than on the service. Set the real id in the console.
       - key: VITE_GOOGLE_CLIENT_ID
-        value: ""
         scope: BUILD_TIME
 
 jobs:

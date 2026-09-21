@@ -8,6 +8,8 @@ loadEnv({ path: path.resolve(process.cwd(), ".env"), quiet: true });
 const SESSION_SECRET_PLACEHOLDERS = new Set([
   "REPLACE_WITH_OPENSSL_RAND_HEX_32",
   "change-me-to-a-long-random-string",
+  "dev-only-not-for-production-session-secret",
+  "test-session-secret-not-for-production-use",
 ]);
 
 export const envSchema = z.object({
