@@ -10,5 +10,5 @@ process.env.DATABASE_URL = current.includes("schema=itest")
   : current.includes("?")
     ? `${current}&schema=itest`
     : `${current}?schema=itest`;
-process.env.SESSION_SECRET ||= "test-session-secret";
+process.env.SESSION_SECRET = "vitest-local-session-secret-min-32-chars";
 process.env.NODE_ENV = "test";
