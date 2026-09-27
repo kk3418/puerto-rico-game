@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getMe } from "../api/auth";
 import { getMyStats } from "../api/matches";
 import type { UserStats } from "../api/types";
 import type { ScoreBreakdown } from "../engine";
+import { LanguageSelect } from "./LanguageSelect";
+import { buildingName } from "./labels";
 import "./EndScreen.css";
 
 export function EndScreen({
@@ -22,6 +25,7 @@ export function EndScreen({
   onRetryFinish: () => void;
   onAgain: () => void;
 }) {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<UserStats | null>(null);
 
   useEffect(() => {
@@ -39,24 +43,29 @@ export function EndScreen({
 
   return (
     <div className="end">
-      <p className="brand">Puerto Rico</p>
-      <h1>{scores[0]?.name}勝出</h1>
+      <div className="end-toolbar">
+        <LanguageSelect compact />
+      </div>
+      <p className="brand">{t("brand")}</p>
+      <h1>{t("winner", { ns: "game", name: scores[0]?.name })}</h1>
       <p className="end-reason">{reason}</p>
-      {finishing && <p>伺服器正在重放對局並計分…</p>}
-      {verified && <p className="verified">分數已由伺服器驗證</p>}
-      {finishError && <p className="error">伺服器計分失敗：{finishError}。以下先顯示本機分數。</p>}
+      {finishing && <p>{t("finishing", { ns: "game" })}</p>}
+      {verified && <p className="verified">{t("verified", { ns: "game" })}</p>}
+      {finishError && (
+        <p className="error">{t("finishFailed", { ns: "game", message: finishError })}</p>
+      )}
       <table>
         <thead>
           <tr>
-            <th>玩家</th>
-            <th>籌碼</th>
-            <th>建築</th>
-            <th>公會堂</th>
-            <th>宅邸</th>
-            <th>要塞</th>
-            <th>海關</th>
-            <th>市政廳</th>
-            <th>總分</th>
+            <th>{t("player", { ns: "game" })}</th>
+            <th>{t("chips", { ns: "game" })}</th>
+            <th>{t("buildings", { ns: "game" })}</th>
+            <th>{buildingName("guildHall")}</th>
+            <th>{buildingName("residence")}</th>
+            <th>{buildingName("fortress")}</th>
+            <th>{buildingName("customsHouse")}</th>
+            <th>{buildingName("cityHall")}</th>
+            <th>{t("total", { ns: "game" })}</th>
           </tr>
         </thead>
         <tbody>
@@ -79,16 +88,21 @@ export function EndScreen({
       </table>
       {stats && (
         <p className="end-stats">
-          我的戰績：{stats.gamesPlayed} 場 · 勝 {stats.gamesWon} · 最佳 {stats.bestScore} 分
+          {t("endStats", {
+            ns: "game",
+            played: stats.gamesPlayed,
+            won: stats.gamesWon,
+            best: stats.bestScore,
+          })}
         </p>
       )}
       {finishError && (
         <button type="button" className="text-btn" disabled={finishing} onClick={onRetryFinish}>
-          重試伺服器計分
+          {t("retryFinish", { ns: "game" })}
         </button>
       )}
       <button type="button" className="start-btn" onClick={onAgain}>
-        再來一局
+        {t("playAgain", { ns: "game" })}
       </button>
     </div>
   );

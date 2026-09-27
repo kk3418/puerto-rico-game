@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { createGuest, githubLoginUrl, loginWithGoogle, logout } from "../api/auth";
 import type { AuthMe } from "../api/types";
+import { LanguageSelect } from "./LanguageSelect";
 
 declare global {
   interface Window {
@@ -28,6 +30,7 @@ export function AuthBar({
   auth: AuthMe | null;
   onAuthChange: (next: AuthMe) => void;
 }) {
+  const { t } = useTranslation();
   const buttonRef = useRef<HTMLDivElement>(null);
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -68,21 +71,22 @@ export function AuthBar({
 
   return (
     <div className="auth-bar">
+      <LanguageSelect />
       {auth?.user ? (
         <p className="auth-status">
           {auth.user.avatarUrl && <img src={auth.user.avatarUrl} alt="" />}
-          <span>已登入 {auth.user.displayName}</span>
+          <span>{t("signedIn", { name: auth.user.displayName })}</span>
           <button type="button" className="text-btn" onClick={() => void onLogout()}>
-            登出
+            {t("signOut")}
           </button>
         </p>
       ) : (
         <div className="auth-actions">
-          <p>登入後可保存戰績。訪客也可玩，憑證由伺服器簽發。</p>
+          <p>{t("guestHint")}</p>
           {clientId && auth?.providers?.google !== false ? <div ref={buttonRef} /> : null}
           {auth?.providers?.github ? (
             <a className="github-btn" href={githubLoginUrl()}>
-              使用 GitHub 登入
+              {t("githubSignIn")}
             </a>
           ) : null}
         </div>

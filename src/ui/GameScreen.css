@@ -43,7 +43,30 @@
 
 .table-actions {
   display: flex;
+  align-items: center;
   gap: 0.8rem;
+}
+
+.table-actions .language-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-weight: 700;
+}
+
+.table-actions .language-select span {
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sand);
+}
+
+.table-actions .language-select select {
+  border: 0;
+  background: rgba(11, 47, 54, 0.55);
+  color: var(--sand-light);
+  font-weight: 700;
+  padding: 0.3rem 0.45rem;
 }
 
 .table-actions .text-btn {

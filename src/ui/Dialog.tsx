@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import "./Dialog.css";
 
 export function Dialog({
@@ -15,11 +16,12 @@ export function Dialog({
   onClose?: () => void;
 }) {
   const titleId = useId();
+  const { t } = useTranslation("game");
   return (
     <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <div className="dialog-card">
         {showClose && (
-          <button type="button" className="dialog-close" aria-label="關閉" onClick={onClose}>
+          <button type="button" className="dialog-close" aria-label={t("close")} onClick={onClose}>
             ×
           </button>
         )}

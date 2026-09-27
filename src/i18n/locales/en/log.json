@@ -1,0 +1,29 @@
+{
+  "roundStart": "Round {{round}} begins. {{governor}} is the Governor. Choose a role.",
+  "chooseRolePrompt": "{{player}} chooses a role.",
+  "newRound": "Round {{round}}. {{governor}} is the Governor.",
+  "gameOver": "The game is over. {{player}} wins with {{score}} VP.",
+  "gameOverNoWinner": "The game is over.",
+  "choseRole": "{{player}} chose the {{role}}.",
+  "choseRoleBonus": "{{player}} chose the {{role}} and took {{bonus}} doubloons from the card.",
+  "mayorPrivilege": "{{player}} (Mayor privilege) takes 1 extra colonist.",
+  "colonistShipRefill": "The colonist ship was refilled with {{count}} colonists.",
+  "built": "{{player}} spent {{cost}} doubloons to build the {{building}}.",
+  "haciendaDraw": "{{player}} drew a {{tile}} with the Hacienda.",
+  "tookTile": "{{player}} took a {{tile}}.",
+  "wharfLoad": "{{player}} shipped {{amount}} barrels with the Wharf.",
+  "shipLoad": "{{player}} loaded {{amount}} barrels.",
+  "shipUnload": "A full cargo ship unloaded {{amount}} barrels of {{good}}.",
+  "factoryGold": "{{player}}'s Factory produced {{money}} doubloons.",
+  "produced": "{{player}} produced goods.",
+  "craftsmanPrivilege": "{{player}} (Craftsman privilege) took 1 extra good.",
+  "sold": "{{player}} sold a good for {{price}} doubloons.",
+  "tradingHouseCleared": "The trading house is full; the goods return to the supply.",
+  "prospectorGold": "{{player}} (Prospector) gains 1 doubloon.",
+  "endTriggered": "Game-end condition: {{reason}}. Score after this Governor round.",
+  "endReason": {
+    "vpExhausted": "the victory point chips have run out",
+    "colonistSupplyEmpty": "the colonist supply is empty and the colonist ship cannot be refilled",
+    "cityFull": "{{player}}'s city is full"
+  }
+}

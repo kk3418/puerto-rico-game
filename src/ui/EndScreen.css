@@ -4,6 +4,34 @@
   color: var(--sand-light);
 }
 
+.end-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+.end-toolbar .language-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-weight: 700;
+}
+
+.end-toolbar .language-select span {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sand);
+}
+
+.end-toolbar .language-select select {
+  border: 0;
+  background: rgba(11, 47, 54, 0.45);
+  color: var(--sand-light);
+  font-weight: 700;
+  padding: 0.35rem 0.5rem;
+}
+
 .end .brand {
   margin: 0;
   font-size: clamp(2.6rem, 7vw, 4.5rem);

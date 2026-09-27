@@ -1,5 +1,6 @@
 import { ApiError } from "../api/client";
 import type { MatchEventInput } from "../api/types";
+import i18n from "../i18n";
 
 export type MatchSyncQueue = {
   enqueue: (event: MatchEventInput) => void;
@@ -77,7 +78,7 @@ export function createMatchSyncQueue(options: {
   }
 
   function latchFatal(err: unknown): Error {
-    const error = toError(err, "事件同步失敗");
+    const error = toError(err, i18n.t("eventSyncFailed"));
     fatalError = error;
     buffer = [];
     inFlight = 0;
@@ -137,7 +138,7 @@ export function createMatchSyncQueue(options: {
         if (isRetriableSyncError(lastError)) {
           buffer = [...batch, ...buffer];
           notify();
-          const error = toError(lastError, "事件同步失敗");
+          const error = toError(lastError, i18n.t("eventSyncFailed"));
           options.onError?.(error.message);
           throw error;
         }

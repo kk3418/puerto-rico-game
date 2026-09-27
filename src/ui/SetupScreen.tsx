@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { readStoredNickname } from "../api/auth";
 import type { AuthMe, MatchSummary } from "../api/types";
 import type { Difficulty, PlayerCount } from "../engine/types";
@@ -23,6 +24,7 @@ export function SetupScreen({
   onContinue: (match: MatchSummary) => Promise<void>;
   onContinueLast?: () => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [playerCount, setPlayerCount] = useState<PlayerCount>(4);
   const [difficulty, setDifficulty] = useState<Difficulty>("balanced");
   const [nickname, setNickname] = useState(readStoredNickname);
@@ -38,7 +40,7 @@ export function SetupScreen({
     try {
       await task();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "無法開始");
+      setError(err instanceof Error ? err.message : t("cannotStart"));
     } finally {
       setBusy(false);
     }
@@ -49,24 +51,24 @@ export function SetupScreen({
       <div className="setup-sky" aria-hidden="true" />
       <div className="setup-island" aria-hidden="true" />
       <main className="setup-main">
-        <p className="brand">Puerto Rico</p>
-        <h1>在島嶼上種、造、運，成為最富裕的總督。</h1>
+        <p className="brand">{t("brand")}</p>
+        <h1>{t("tagline")}</h1>
         <AuthBar auth={auth} onAuthChange={onAuthChange} />
         {authError && <p className="error">{authError}</p>}
-        {bootError && <p className="error">{bootError}。請確認 API 與資料庫已啟動。</p>}
+        {bootError && <p className="error">{t("bootHint", { message: bootError })}</p>}
         <div className="setup-cta">
           <label className="nick-field">
-            <span>暱稱</span>
+            <span>{t("nickname")}</span>
             <input
               type="text"
               maxLength={24}
               value={nickname}
-              placeholder="開局前必填"
+              placeholder={t("nicknamePlaceholder")}
               onChange={(e) => setNickname(e.target.value)}
             />
           </label>
           <fieldset>
-            <legend>人數</legend>
+            <legend>{t("playerCount")}</legend>
             {([3, 4, 5] as const).map((n) => (
               <label key={n}>
                 <input
@@ -75,12 +77,12 @@ export function SetupScreen({
                   checked={playerCount === n}
                   onChange={() => setPlayerCount(n)}
                 />
-                {n} 人（你 + {n - 1} AI）
+                {t("playerCountOption", { count: n, ai: n - 1 })}
               </label>
             ))}
           </fieldset>
           <fieldset>
-            <legend>AI</legend>
+            <legend>{t("ai")}</legend>
             <label>
               <input
                 type="radio"
@@ -88,7 +90,7 @@ export function SetupScreen({
                 checked={difficulty === "balanced"}
                 onChange={() => setDifficulty("balanced")}
               />
-              均衡
+              {t("aiBalanced")}
             </label>
             <label>
               <input
@@ -97,7 +99,7 @@ export function SetupScreen({
                 checked={difficulty === "aggressive"}
                 onChange={() => setDifficulty("aggressive")}
               />
-              積極
+              {t("aiAggressive")}
             </label>
           </fieldset>
           <button
@@ -106,7 +108,7 @@ export function SetupScreen({
             disabled={!ready || !trimmed || busy}
             onClick={() => void run(() => onStart(playerCount, difficulty, trimmed))}
           >
-            {busy ? "開局中…" : "開局"}
+            {busy ? t("starting") : t("start")}
           </button>
           {onContinueLast && (
             <button
@@ -115,7 +117,7 @@ export function SetupScreen({
               disabled={busy || !ready}
               onClick={() => void run(onContinueLast)}
             >
-              繼續上一局
+              {t("continueLast")}
             </button>
           )}
         </div>

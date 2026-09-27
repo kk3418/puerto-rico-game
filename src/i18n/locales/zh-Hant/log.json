@@ -1,0 +1,29 @@
+{
+  "roundStart": "第 {{round}} 輪開始。總督是{{governor}}。請選擇角色。",
+  "chooseRolePrompt": "{{player}}選擇角色。",
+  "newRound": "第 {{round}} 輪。總督是{{governor}}。",
+  "gameOver": "遊戲結束。{{player}}以 {{score}} 分勝出。",
+  "gameOverNoWinner": "遊戲結束。",
+  "choseRole": "{{player}}選擇了{{role}}。",
+  "choseRoleBonus": "{{player}}選擇了{{role}}並拿取牌上 {{bonus}} 金幣。",
+  "mayorPrivilege": "{{player}}（市長特權）多拿 1 名殖民者。",
+  "colonistShipRefill": "殖民船補了 {{count}} 名殖民者。",
+  "built": "{{player}}花費 {{cost}} 金幣建造{{building}}。",
+  "haciendaDraw": "{{player}}以莊園抽到{{tile}}。",
+  "tookTile": "{{player}}拿了{{tile}}。",
+  "wharfLoad": "{{player}}以碼頭裝運 {{amount}} 桶。",
+  "shipLoad": "{{player}}裝船 {{amount}} 桶。",
+  "shipUnload": "滿載的貨船卸下 {{amount}} 桶{{good}}。",
+  "factoryGold": "{{player}}的工廠產出 {{money}} 金幣。",
+  "produced": "{{player}}生產了貨物。",
+  "craftsmanPrivilege": "{{player}}（工匠特權）多拿了 1 個貨物。",
+  "sold": "{{player}}賣出貨物，獲得 {{price}} 金幣。",
+  "tradingHouseCleared": "交易屋已滿，貨物回到供應堆。",
+  "prospectorGold": "{{player}}（淘金者）獲得 1 金幣。",
+  "endTriggered": "終局條件觸發：{{reason}}。本輪總督回合結束後結算。",
+  "endReason": {
+    "vpExhausted": "勝利分籌碼用盡",
+    "colonistSupplyEmpty": "殖民者供應耗盡，無法補滿殖民船",
+    "cityFull": "{{player}}的城市已滿"
+  }
+}
