@@ -1,12 +1,12 @@
 import { useTranslation } from "react-i18next";
 import { resolveAppLanguage, type AppLanguage } from "../i18n";
 
-export function LanguageSelect({ compact = false }: { compact?: boolean }) {
+export function LanguageSelect() {
   const { t, i18n } = useTranslation();
   const value = resolveAppLanguage(i18n.resolvedLanguage ?? i18n.language);
 
   return (
-    <label className={`language-select${compact ? " compact" : ""}`}>
+    <label className="language-select">
       <span>{t("language")}</span>
       <select
         value={value}

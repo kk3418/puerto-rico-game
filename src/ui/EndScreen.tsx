@@ -44,7 +44,7 @@ export function EndScreen({
   return (
     <div className="end">
       <div className="end-toolbar">
-        <LanguageSelect compact />
+        <LanguageSelect />
       </div>
       <p className="brand">{t("brand")}</p>
       <h1>{t("winner", { ns: "game", name: scores[0]?.name })}</h1>

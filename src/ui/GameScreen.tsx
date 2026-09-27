@@ -302,6 +302,7 @@ export function GameScreen({
           {syncError ? t("syncFailed", { ns: "game" }) : pending > 0 ? t("syncing", { ns: "game" }) : ""}
         </p>
         <div className="table-actions">
+          <LanguageSelect />
           <button
             ref={logToggleRef}
             type="button"
@@ -315,7 +316,6 @@ export function GameScreen({
           <button type="button" className="text-btn" onClick={onLeave}>
             {t("leave", { ns: "game" })}
           </button>
-          <LanguageSelect compact />
         </div>
       </header>
       <aside
