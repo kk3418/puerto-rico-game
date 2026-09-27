@@ -82,7 +82,6 @@ export function AuthBar({
         </p>
       ) : (
         <div className="auth-actions">
-          <p>{t("guestHint")}</p>
           {clientId && auth?.providers?.google !== false ? <div ref={buttonRef} /> : null}
           {auth?.providers?.github ? (
             <a className="github-btn" href={githubLoginUrl()}>

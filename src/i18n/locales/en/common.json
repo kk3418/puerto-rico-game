@@ -6,7 +6,6 @@
   "language": "Language",
   "languageEn": "English",
   "languageZh": "繁體中文",
-  "guestHint": "Guests can play; the server issues the credential.",
   "signedIn": "Signed in as {{name}}",
   "signOut": "Sign out",
   "githubSignIn": "Sign in with GitHub",
