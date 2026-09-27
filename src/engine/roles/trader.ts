@@ -48,14 +48,14 @@ export function applyTrader(state: GameState, action: Action): void {
     state.tradingHouse.push(action.good);
     const price = salePrice(phase.actorIndex, state, action.good);
     player.doubloons += price;
-    pushLog(state, `${player.name}賣出貨物，獲得 ${price} 金幣。`);
+    pushLog(state, "sold", { player: player.name, price });
   }
   const next = (phase.actorIndex + 1) % state.players.length;
   if (next === state.activeRoleOwnerIndex) {
     if (state.tradingHouse.length >= 4) {
       for (const good of state.tradingHouse) returnGood(state, good, 1);
       state.tradingHouse = [];
-      pushLog(state, "交易屋已滿，貨物回到供應堆。");
+      pushLog(state, "tradingHouseCleared");
     }
     completeRole(state);
     return;

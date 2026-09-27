@@ -55,8 +55,11 @@ export function applyAction(state: GameState, action: Action): GameState {
       slot.doubloons = 0;
       slot.taken = true;
       slot.takenBy = next.chooserIndex;
-      const bonusText = bonus > 0 ? `並拿取牌上 ${bonus} 金幣` : "";
-      pushLog(next, `${chooser.name}選擇了${roleLabel(slot.role)}${bonusText}。`);
+      if (bonus > 0) {
+        pushLog(next, "choseRoleBonus", { player: chooser.name, role: slot.role, bonus });
+      } else {
+        pushLog(next, "choseRole", { player: chooser.name, role: slot.role });
+      }
       beginChosenRole(next, slot.role, next.chooserIndex);
       break;
     }

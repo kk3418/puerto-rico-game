@@ -94,7 +94,7 @@ export function applyCaptain(state: GameState, action: Action): void {
     returnGood(state, action.good, amount);
     phase.wharfUsed.push(player.id);
     scoreShipment(state, player, amount, phase);
-    pushLog(state, `${player.name}以碼頭裝運 ${amount} 桶。`);
+    pushLog(state, "wharfLoad", { player: player.name, amount });
   } else {
     const ship = state.ships[action.destination];
     if (!ship) return;
@@ -104,7 +104,7 @@ export function applyCaptain(state: GameState, action: Action): void {
     ship.good = action.good;
     ship.loaded += amount;
     scoreShipment(state, player, amount, phase);
-    pushLog(state, `${player.name}裝船 ${amount} 桶。`);
+    pushLog(state, "shipLoad", { player: player.name, amount });
   }
 
   phase.passes = 0;
@@ -175,7 +175,7 @@ function emptyFullShips(state: GameState): void {
   for (const ship of state.ships) {
     if (ship.good && ship.loaded >= ship.capacity) {
       returnGood(state, ship.good, ship.loaded);
-      pushLog(state, `滿載的貨船卸下 ${ship.loaded} 桶${ship.good}。`);
+      pushLog(state, "shipUnload", { amount: ship.loaded, good: ship.good });
       ship.good = null;
       ship.loaded = 0;
     }

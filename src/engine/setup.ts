@@ -1,5 +1,5 @@
 import { emptyBuildingSupply } from "./buildings";
-import { emptyGoods, refillFaceUp } from "./helpers";
+import { emptyGoods, pushLog, refillFaceUp } from "./helpers";
 import { nextUnit, shuffleInPlace } from "./rng";
 import type { GameState, PlayerCount, PlayerState, Role, SetupOptions, TileType } from "./types";
 
@@ -129,12 +129,9 @@ export function createInitialState(options: SetupOptions): GameState {
   };
 
   refillFaceUp(state);
-  state.log = [
-    {
-      id: 1,
-      text: `第 1 輪開始。總督是${state.players[governorIndex]!.name}。請選擇角色。`,
-    },
-  ];
-  state.logSeq = 1;
+  pushLog(state, "roundStart", {
+    round: 1,
+    governor: state.players[governorIndex]!.name,
+  });
   return state;
 }

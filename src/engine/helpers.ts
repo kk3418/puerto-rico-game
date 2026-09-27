@@ -119,7 +119,7 @@ export function awardVp(state: GameState, player: PlayerState, amount: number): 
   player.vpChips += amount;
   state.vpSupply = Math.max(0, state.vpSupply - amount);
   if (state.vpSupply === 0) {
-    triggerEnd(state, "勝利分籌碼用盡");
+    triggerEnd(state, "vpExhausted");
   }
 }
 
@@ -129,17 +129,26 @@ export function vpTokenCount(vpPoints: number): number {
   return Math.floor(points / 5) + (points % 5);
 }
 
-export function triggerEnd(state: GameState, reason: string): void {
+export function triggerEnd(
+  state: GameState,
+  reasonKey: string,
+  params?: Record<string, string | number>,
+): void {
   if (!state.endTriggered) {
     state.endTriggered = true;
-    state.endReason = reason;
-    pushLog(state, `終局條件觸發：${reason}。本輪總督回合結束後結算。`);
+    state.endReason =
+      reasonKey === "cityFull" && params?.player != null ? `cityFull:${params.player}` : reasonKey;
+    pushLog(state, "endTriggered", { reasonKey, ...params });
   }
 }
 
-export function pushLog(state: GameState, text: string): void {
+export function pushLog(
+  state: GameState,
+  key: string,
+  params?: Record<string, string | number>,
+): void {
   state.logSeq += 1;
-  state.log.push({ id: state.logSeq, text });
+  state.log.push({ id: state.logSeq, key, params });
   if (state.log.length > 80) state.log.splice(0, state.log.length - 80);
 }
 

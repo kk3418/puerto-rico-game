@@ -77,7 +77,8 @@ describe("setup", () => {
       expect(s.governorIndex).toBeGreaterThanOrEqual(0);
       expect(s.governorIndex).toBeLessThan(4);
       expect(s.chooserIndex).toBe(s.governorIndex);
-      expect(s.log[0]!.text).toContain(s.players[s.governorIndex]!.name);
+      expect(s.log[0]!.key).toBe("roundStart");
+      expect(s.log[0]!.params?.governor).toBe(s.players[s.governorIndex]!.name);
       const g = s.governorIndex;
       expect(s.players[g]!.island[0]!.type).toBe("indigo");
       expect(s.players[(g + 1) % 4]!.island[0]!.type).toBe("indigo");

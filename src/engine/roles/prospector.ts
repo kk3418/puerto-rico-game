@@ -5,7 +5,7 @@ import type { Action, GameState } from "../types";
 export function beginProspector(state: GameState, ownerIndex: number): void {
   const player = state.players[ownerIndex]!;
   player.doubloons += 1;
-  pushLog(state, `${player.name}（淘金者）獲得 1 金幣。`);
+  pushLog(state, "prospectorGold", { player: player.name });
   completeRole(state);
 }
 
