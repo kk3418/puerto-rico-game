@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import i18n, { i18nReady } from "./index";
 import { formatEndReason, formatLogEntry } from "./format";
+import enLog from "./locales/en/log.json";
+import zhLog from "./locales/zh-Hant/log.json";
 
 describe("formatLogEntry", () => {
   beforeAll(async () => {
@@ -9,6 +11,16 @@ describe("formatLogEntry", () => {
 
   it("returns stored text when a key is missing (old saves)", () => {
     expect(formatLogEntry({ id: 1, text: "第 1 輪開始。" }, i18n.t)).toBe("第 1 輪開始。");
+  });
+
+  it("falls back to legacy text when the key is unknown", async () => {
+    await i18n.changeLanguage("en");
+    expect(
+      formatLogEntry(
+        { id: 3, key: "noSuchKey", text: "legacy Chinese line", params: { player: "Ada" } },
+        i18n.t,
+      ),
+    ).toBe("legacy Chinese line");
   });
 
   it("translates structured keys with term ids", async () => {
@@ -29,9 +41,29 @@ describe("formatEndReason", () => {
     await i18n.changeLanguage("en");
   });
 
-  it("translates known keys and leaves unknown Chinese as-is", () => {
+  it("translates known keys and legacy Chinese end reasons", () => {
     expect(formatEndReason("vpExhausted", i18n.t)).toBe("the victory point chips have run out");
     expect(formatEndReason("cityFull:Ada", i18n.t)).toBe("Ada's city is full");
-    expect(formatEndReason("勝利分籌碼用盡", i18n.t)).toBe("勝利分籌碼用盡");
+    expect(formatEndReason("勝利分籌碼用盡", i18n.t)).toBe("the victory point chips have run out");
+    expect(formatEndReason("殖民者供應耗盡，無法補滿殖民船", i18n.t)).toBe(
+      "the colonist supply is empty and the colonist ship cannot be refilled",
+    );
+    expect(formatEndReason("Ada的城市已滿", i18n.t)).toBe("Ada's city is full");
+  });
+});
+
+describe("log locale parity", () => {
+  it("keeps en and zh-Hant log keys aligned", () => {
+    const flatten = (obj: Record<string, unknown>, prefix = ""): string[] =>
+      Object.entries(obj).flatMap(([key, value]) => {
+        const path = prefix ? `${prefix}.${key}` : key;
+        if (value && typeof value === "object") {
+          return flatten(value as Record<string, unknown>, path);
+        }
+        return [path];
+      });
+    expect(flatten(enLog as Record<string, unknown>).sort()).toEqual(
+      flatten(zhLog as Record<string, unknown>).sort(),
+    );
   });
 });

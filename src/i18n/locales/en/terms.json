@@ -9,27 +9,27 @@
     "prospector": "Prospector"
   },
   "goods": {
-    "corn": "corn",
-    "indigo": "indigo",
-    "sugar": "sugar",
-    "tobacco": "tobacco",
-    "coffee": "coffee"
+    "corn": "Corn",
+    "indigo": "Indigo",
+    "sugar": "Sugar",
+    "tobacco": "Tobacco",
+    "coffee": "Coffee"
   },
   "tiles": {
-    "corn": "corn",
-    "indigo": "indigo",
-    "sugar": "sugar",
-    "tobacco": "tobacco",
-    "coffee": "coffee",
-    "quarry": "quarry"
+    "corn": "Corn",
+    "indigo": "Indigo",
+    "sugar": "Sugar",
+    "tobacco": "Tobacco",
+    "coffee": "Coffee",
+    "quarry": "Quarry"
   },
   "plantations": {
-    "corn": "corn plantation",
-    "indigo": "indigo plantation",
-    "sugar": "sugar plantation",
-    "tobacco": "tobacco plantation",
-    "coffee": "coffee plantation",
-    "quarry": "quarry"
+    "corn": "Corn plantation",
+    "indigo": "Indigo plantation",
+    "sugar": "Sugar plantation",
+    "tobacco": "Tobacco plantation",
+    "coffee": "Coffee plantation",
+    "quarry": "Quarry"
   },
   "buildings": {
     "smallIndigo": "Small Indigo Plant",
