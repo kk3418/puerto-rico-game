@@ -23,7 +23,13 @@ import {
 } from "../engine";
 
 function setup(playerCount: 3 | 4 | 5 = 3, seed = 1): GameState {
-  return createInitialState({ playerCount, difficulty: "balanced", seed, governorIndex: 0 });
+  return createInitialState({
+    playerCount,
+    difficulty: "balanced",
+    seed,
+    humanName: "Ada",
+    governorIndex: 0,
+  });
 }
 
 function play(state: GameState, action: Action): GameState {
@@ -65,6 +71,7 @@ describe("setup", () => {
       playerCount: 4,
       difficulty: "balanced",
       seed: 1,
+      humanName: "Ada",
       governorIndex: 2,
     });
     expect(s4g2.players.map((p) => p.island[0]!.type)).toEqual(["corn", "corn", "indigo", "indigo"]);
@@ -73,7 +80,7 @@ describe("setup", () => {
   it("picks the first governor from the seed when not pinned", () => {
     const governors = new Set<number>();
     for (let seed = 0; seed < 40; seed++) {
-      const s = createInitialState({ playerCount: 4, difficulty: "balanced", seed });
+      const s = createInitialState({ playerCount: 4, difficulty: "balanced", seed, humanName: "Ada" });
       expect(s.governorIndex).toBeGreaterThanOrEqual(0);
       expect(s.governorIndex).toBeLessThan(4);
       expect(s.chooserIndex).toBe(s.governorIndex);

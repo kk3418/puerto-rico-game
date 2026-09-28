@@ -185,7 +185,7 @@ export interface SetupOptions {
   playerCount: PlayerCount;
   difficulty: Difficulty;
   seed?: number;
-  humanName?: string;
+  humanName: string;
   /** When omitted, the first governor is chosen from the seed/RNG. */
   governorIndex?: number;
 }

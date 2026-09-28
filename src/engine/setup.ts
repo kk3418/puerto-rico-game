@@ -39,7 +39,7 @@ export function createInitialState(options: SetupOptions): GameState {
     const isHuman = i === 0;
     players.push({
       id: `p${i}`,
-      name: isHuman ? (options.humanName ?? "你") : `AI ${AI_NAMES[i - 1]}`,
+      name: isHuman ? options.humanName : `AI ${AI_NAMES[i - 1]}`,
       isHuman,
       doubloons: startingDoubloons(playerCount),
       vpChips: 0,
