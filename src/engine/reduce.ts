@@ -93,17 +93,4 @@ export function applyAction(state: GameState, action: Action): GameState {
   return next;
 }
 
-export function roleLabel(role: string): string {
-  const labels: Record<string, string> = {
-    settler: "拓荒者",
-    mayor: "市長",
-    builder: "建築師",
-    craftsman: "工匠",
-    trader: "商人",
-    captain: "船長",
-    prospector: "淘金者",
-  };
-  return labels[role] ?? role;
-}
-
 export { actionsEqual };
