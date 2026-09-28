@@ -65,6 +65,21 @@ describe("createMatchSyncQueue", () => {
     expect(started).toBe(true);
   });
 
+  it("passes keepalive only when flush requests it", async () => {
+    const flags: Array<boolean | undefined> = [];
+    const queue = createMatchSyncQueue({
+      debounceMs: 10_000,
+      async post(_events, init) {
+        flags.push(init?.keepalive);
+      },
+    });
+    queue.enqueue(event(1));
+    await queue.flush();
+    queue.enqueue(event(2));
+    await queue.flush({ keepalive: true });
+    expect(flags).toEqual([undefined, true]);
+  });
+
   it("does not return from flush until the in-flight batch has been posted", async () => {
     const gate = deferred<void>();
     let finished = false;
@@ -124,55 +139,5 @@ describe("createMatchSyncQueue", () => {
     expect(attempts).toBe(1);
     expect(received).toEqual([[6]]);
     expect(errors).toEqual(["事件 6 無法套用：Illegal action"]);
-  });
-
-  it("abort during an in-flight post does not requeue or report the later failure", async () => {
-    const gate = deferred<void>();
-    let attempts = 0;
-    const errors: Array<string | null> = [];
-    const queue = createMatchSyncQueue({
-      debounceMs: 10_000,
-      maxAttempts: 3,
-      onError: (message) => errors.push(message),
-      async post() {
-        attempts += 1;
-        await gate.promise;
-        throw new Error("network");
-      },
-    });
-    queue.enqueue(event(1));
-    const flushing = queue.flush();
-    await Promise.resolve();
-    queue.abort();
-    gate.resolve();
-    await expect(flushing).resolves.toBeUndefined();
-    queue.enqueue(event(2));
-    await expect(queue.flush()).resolves.toBeUndefined();
-    expect(attempts).toBe(1);
-    expect(errors).toEqual([]);
-  });
-
-  it("abort during retry sleep skips remaining attempts", async () => {
-    let attempts = 0;
-    const sleeping = deferred<void>();
-    const queue = createMatchSyncQueue({
-      debounceMs: 10_000,
-      maxAttempts: 3,
-      retryDelayMs: () => 10_000,
-      sleep: () => {
-        sleeping.resolve();
-        return new Promise(() => undefined);
-      },
-      async post() {
-        attempts += 1;
-        throw new Error("network");
-      },
-    });
-    queue.enqueue(event(4));
-    const flushing = queue.flush();
-    await sleeping.promise;
-    queue.abort();
-    await expect(flushing).resolves.toBeUndefined();
-    expect(attempts).toBe(1);
   });
 });

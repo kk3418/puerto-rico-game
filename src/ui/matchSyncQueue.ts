@@ -2,10 +2,11 @@ import { ApiError } from "../api/client";
 import type { MatchEventInput } from "../api/types";
 import i18n from "../i18n";
 
+export type MatchSyncPostInit = { keepalive?: boolean };
+
 export type MatchSyncQueue = {
   enqueue: (event: MatchEventInput) => void;
-  flush: () => Promise<void>;
-  abort: () => void;
+  flush: (init?: MatchSyncPostInit) => Promise<void>;
 };
 
 function isRetriableSyncError(err: unknown): boolean {
@@ -20,7 +21,7 @@ function toError(err: unknown, fallback: string): Error {
 }
 
 export function createMatchSyncQueue(options: {
-  post: (events: MatchEventInput[]) => Promise<void>;
+  post: (events: MatchEventInput[], init?: MatchSyncPostInit) => Promise<void>;
   debounceMs?: number;
   maxAttempts?: number;
   retryDelayMs?: (attempt: number) => number;
@@ -43,8 +44,6 @@ export function createMatchSyncQueue(options: {
   let tail: Promise<void> = Promise.resolve();
   let queuedFlushes = 0;
   let fatalError: Error | null = null;
-  let aborted = false;
-  let resumeSleep: (() => void) | undefined;
 
   function notify() {
     options.onPending?.(buffer.length + inFlight);
@@ -59,23 +58,8 @@ export function createMatchSyncQueue(options: {
 
   function wait(ms: number): Promise<void> {
     return new Promise((resolve) => {
-      resumeSleep = resolve;
-      void sleep(ms).then(() => {
-        if (resumeSleep === resolve) resumeSleep = undefined;
-        resolve();
-      });
+      void sleep(ms).then(resolve);
     });
-  }
-
-  function stopSleep() {
-    resumeSleep?.();
-    resumeSleep = undefined;
-  }
-
-  function settleAbort(): void {
-    buffer = [];
-    inFlight = 0;
-    notify();
   }
 
   function latchFatal(err: unknown): Error {
@@ -89,15 +73,10 @@ export function createMatchSyncQueue(options: {
     return error;
   }
 
-  async function sendLoop() {
-    if (aborted) return;
+  async function sendLoop(init?: MatchSyncPostInit) {
     if (fatalError) throw fatalError;
     clearDebounce();
     while (buffer.length > 0) {
-      if (aborted) {
-        settleAbort();
-        return;
-      }
       if (fatalError) throw fatalError;
       const batch = buffer;
       buffer = [];
@@ -107,34 +86,18 @@ export function createMatchSyncQueue(options: {
       let sent = false;
       const attempts = Math.max(1, maxAttempts);
       for (let attempt = 0; attempt < attempts; attempt++) {
-        if (aborted) {
-          settleAbort();
-          return;
-        }
         try {
-          await options.post(batch);
-          if (aborted) {
-            settleAbort();
-            return;
-          }
+          await options.post(batch, init);
           sent = true;
           options.onError?.(null);
           break;
         } catch (err) {
-          if (aborted) {
-            settleAbort();
-            return;
-          }
           lastError = err;
           if (!isRetriableSyncError(err) || attempt >= attempts - 1) break;
           await wait(retryDelay(attempt));
         }
       }
       inFlight = 0;
-      if (aborted) {
-        settleAbort();
-        return;
-      }
       if (!sent) {
         if (isRetriableSyncError(lastError)) {
           buffer = [...batch, ...buffer];
@@ -149,12 +112,11 @@ export function createMatchSyncQueue(options: {
     }
   }
 
-  function flush() {
-    if (aborted) return Promise.resolve();
+  function flush(init?: MatchSyncPostInit) {
     if (fatalError) return Promise.reject(fatalError);
     queuedFlushes += 1;
     // Run immediately when idle so pagehide can start a keepalive fetch in the same turn.
-    const job = queuedFlushes === 1 ? sendLoop() : tail.then(sendLoop, sendLoop);
+    const job = queuedFlushes === 1 ? sendLoop(init) : tail.then(() => sendLoop(init), () => sendLoop(init));
     const settled = job.finally(() => {
       queuedFlushes -= 1;
     });
@@ -166,7 +128,7 @@ export function createMatchSyncQueue(options: {
   }
 
   function enqueue(event: MatchEventInput) {
-    if (aborted || fatalError) return;
+    if (fatalError) return;
     buffer.push(event);
     notify();
     clearDebounce();
@@ -176,12 +138,5 @@ export function createMatchSyncQueue(options: {
     }, debounceMs);
   }
 
-  function abort() {
-    aborted = true;
-    clearDebounce();
-    stopSleep();
-    settleAbort();
-  }
-
-  return { enqueue, flush, abort };
+  return { enqueue, flush };
 }

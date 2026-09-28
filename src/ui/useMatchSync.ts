@@ -15,10 +15,8 @@ export function useMatchSync(matchId: string, startSeq: number, playToken: strin
   const queueRef = useRef<MatchSyncQueue | null>(null);
   if (!queueRef.current) {
     queueRef.current = createMatchSyncQueue({
-      post: (events) =>
-        postMatchEvents(matchIdRef.current, events, playTokenRef.current, { keepalive: true }).then(
-          () => undefined,
-        ),
+      post: (events, init) =>
+        postMatchEvents(matchIdRef.current, events, playTokenRef.current, init).then(() => undefined),
       onPending: setPending,
       onError: (message) => {
         setSyncError(message);
@@ -29,18 +27,18 @@ export function useMatchSync(matchId: string, startSeq: number, playToken: strin
 
   useEffect(() => {
     const onPageHide = () => {
-      void queueRef.current?.flush().catch(() => undefined);
+      void queueRef.current?.flush({ keepalive: true }).catch(() => undefined);
     };
     window.addEventListener("pagehide", onPageHide);
     return () => {
       window.removeEventListener("pagehide", onPageHide);
-      // Do not abort here. React StrictMode runs this cleanup on the first mount,
-      // and abort() permanently drops every later action, so a refresh restores nothing.
+      // Do not drop the queue on unmount. React StrictMode runs this cleanup on the
+      // first mount; flushing preserves buffered events so a refresh can restore them.
       void queueRef.current?.flush().catch(() => undefined);
     };
   }, []);
 
-  const flush = useCallback(() => queueRef.current!.flush(), []);
+  const flush = useCallback((init?: { keepalive?: boolean }) => queueRef.current!.flush(init), []);
 
   const enqueue = useCallback((before: GameState, action: Action, actorSeatIndex: number) => {
     const event: MatchEventInput = {
