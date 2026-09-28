@@ -3,8 +3,6 @@ import { emptyGoods, pushLog, refillFaceUp } from "./helpers";
 import { nextUnit, shuffleInPlace } from "./rng";
 import type { GameState, PlayerCount, PlayerState, Role, SetupOptions, TileType } from "./types";
 
-const AI_NAMES = ["伊莎貝拉", "迭戈", "卡塔莉娜", "羅倫佐"];
-
 export function colonistCount(playerCount: PlayerCount): number {
   return playerCount === 3 ? 55 : playerCount === 4 ? 75 : 95;
 }
@@ -30,6 +28,10 @@ export function startingPlantations(playerCount: PlayerCount): TileType[] {
 }
 
 export function createInitialState(options: SetupOptions): GameState {
+  const humanName = options.humanName.trim();
+  if (!humanName) {
+    throw new Error("humanName is required");
+  }
   const playerCount = options.playerCount;
   const seed = options.seed ?? (Date.now() & 0x7fffffff);
   const starts = startingPlantations(playerCount);
@@ -39,7 +41,7 @@ export function createInitialState(options: SetupOptions): GameState {
     const isHuman = i === 0;
     players.push({
       id: `p${i}`,
-      name: isHuman ? options.humanName : `AI ${AI_NAMES[i - 1]}`,
+      name: isHuman ? humanName : `AI ${i}`,
       isHuman,
       doubloons: startingDoubloons(playerCount),
       vpChips: 0,

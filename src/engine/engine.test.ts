@@ -43,6 +43,11 @@ function choose(state: GameState, role: string): GameState {
 }
 
 describe("setup", () => {
+  it("rejects a blank human nickname", () => {
+    expect(() =>
+      createInitialState({ playerCount: 3, difficulty: "balanced", seed: 1, humanName: "  " }),
+    ).toThrow(/humanName/);
+  });
   it("sets 3/4/5 player supplies, money, and ships", () => {
     for (const n of [3, 4, 5] as const) {
       const s = setup(n);
