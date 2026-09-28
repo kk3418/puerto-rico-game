@@ -5,7 +5,7 @@ import type { ProviderProfile } from "./accounts";
 
 export async function verifyGoogleIdToken(idToken: string): Promise<ProviderProfile> {
   if (!env.GOOGLE_CLIENT_ID) {
-    throw new HttpError(503, "尚未設定 Google 登入");
+    throw new HttpError(503, "尚未設定 Google 登入", "GOOGLE_NOT_CONFIGURED");
   }
   const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
   let payload;
@@ -16,10 +16,10 @@ export async function verifyGoogleIdToken(idToken: string): Promise<ProviderProf
     });
     payload = ticket.getPayload();
   } catch {
-    throw new HttpError(401, "Google 身分驗證失敗");
+    throw new HttpError(401, "Google 身分驗證失敗", "GOOGLE_AUTH_FAILED");
   }
   if (!payload?.sub) {
-    throw new HttpError(401, "Google 身分驗證失敗");
+    throw new HttpError(401, "Google 身分驗證失敗", "GOOGLE_AUTH_FAILED");
   }
   return {
     provider: "google",

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { formatEndReason, formatLogEntry } from "../i18n/format";
 import { abandonMatch, finishMatch } from "../api/matches";
+import { formatApiError } from "../api/errorMessage";
 import { clearLastMatchId } from "../api/auth";
 import { HeuristicAgent, HumanAgent, dispatchAction, type PlayerAgent } from "../agents";
 import {
@@ -139,10 +140,11 @@ export function GameScreen({
       setAwaitingHuman(false);
     }
 
-    void loop(initial).catch((err: Error) => {
-      if (!cancelled && err.message !== "cancelled") {
+    void loop(initial).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : formatApiError(err);
+      if (!cancelled && message !== "cancelled") {
         console.error(err);
-        setError(err.message);
+        setError(formatApiError(err, message));
         setBusy(false);
         setAwaitingHuman(false);
       }
@@ -185,8 +187,8 @@ export function GameScreen({
       setServerReason(result.endReason);
       setVerified(result.verified);
     })()
-      .catch((err: Error) => {
-        if (!cancelled) setFinishError(err.message);
+      .catch((err: unknown) => {
+        if (!cancelled) setFinishError(formatApiError(err));
       })
       .finally(() => {
         if (!cancelled) setFinishing(false);
@@ -229,7 +231,7 @@ export function GameScreen({
     try {
       humanRef.current.submit(action);
     } catch (err) {
-      setError(err instanceof Error ? err.message : i18n.t("actionFailed", { ns: "game" }));
+      setError(formatApiError(err, i18n.t("actionFailed", { ns: "game" })));
     }
   }
 
@@ -241,7 +243,7 @@ export function GameScreen({
     try {
       await flush();
     } catch (err) {
-      setError(err instanceof Error ? err.message : i18n.t("leaveFailed", { ns: "game" }));
+      setError(formatApiError(err, i18n.t("leaveFailed", { ns: "game" })));
       return;
     }
     onExit();
@@ -255,7 +257,7 @@ export function GameScreen({
       }
       clearLastMatchId();
     } catch (err) {
-      setError(err instanceof Error ? err.message : i18n.t("leaveFailed", { ns: "game" }));
+      setError(formatApiError(err, i18n.t("leaveFailed", { ns: "game" })));
       return;
     }
     onExit();
@@ -278,7 +280,7 @@ export function GameScreen({
               setServerReason(result.endReason);
               setVerified(result.verified);
             })
-            .catch((err: Error) => setFinishError(err.message))
+            .catch((err: unknown) => setFinishError(formatApiError(err)))
             .finally(() => setFinishing(false));
         }}
         onAgain={onExit}

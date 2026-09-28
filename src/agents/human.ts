@@ -1,4 +1,5 @@
 import type { Action } from "../engine/types";
+import i18n from "../i18n";
 import type { PlayerAgent } from "./types";
 
 export class HumanAgent implements PlayerAgent {
@@ -17,7 +18,7 @@ export class HumanAgent implements PlayerAgent {
     this.resolve = null;
     this.reject = null;
     if (!resolve) {
-      throw new Error("現在不是你的行動");
+      throw new Error(i18n.t("notYourTurn"));
     }
     resolve(action);
   }

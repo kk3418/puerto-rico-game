@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { formatApiError } from "../api/errorMessage";
 import { getMyMatches, getMyStats } from "../api/matches";
 import type { MatchSummary, UserStats } from "../api/types";
 
@@ -26,7 +27,7 @@ export function StatsPanel({
         }
       })
       .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
+        if (!cancelled) setError(formatApiError(err));
       });
     return () => {
       cancelled = true;

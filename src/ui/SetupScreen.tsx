@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { readStoredNickname } from "../api/auth";
+import { formatApiError } from "../api/errorMessage";
 import type { AuthMe, MatchSummary } from "../api/types";
 import type { Difficulty, PlayerCount } from "../engine/types";
 import { AuthBar } from "./AuthBar";
@@ -40,7 +41,7 @@ export function SetupScreen({
     try {
       await task();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("cannotStart"));
+      setError(formatApiError(err, t("cannotStart")));
     } finally {
       setBusy(false);
     }

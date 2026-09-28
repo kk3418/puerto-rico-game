@@ -10,6 +10,7 @@ import {
   writeStoredNickname,
 } from "../api/auth";
 import { ApiError } from "../api/client";
+import { formatApiError } from "../api/errorMessage";
 import { createMatch, getMatchState } from "../api/matches";
 import type { AuthMe, MatchSummary } from "../api/types";
 import type { Difficulty, GameState, PlayerCount } from "../engine";
@@ -92,8 +93,8 @@ export function App() {
         }
       }
     })()
-      .catch((err: Error) => {
-        setBootError(err.message || i18n.t("serverUnreachable"));
+      .catch((err: unknown) => {
+        setBootError(formatApiError(err, i18n.t("serverUnreachable")));
       })
       .finally(() => {
         setBooting(false);

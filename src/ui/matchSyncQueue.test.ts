@@ -129,15 +129,19 @@ describe("createMatchSyncQueue", () => {
       async post(events) {
         attempts += 1;
         received.push(events.map((item) => item.seq));
-        throw new ApiError(400, "事件 6 無法套用：Illegal action");
+        throw new ApiError(400, "事件 6 無法套用：Illegal action", "EVENT_APPLY_FAILED", {
+          seq: 6,
+          detail: "Illegal action",
+        });
       },
     });
     queue.enqueue(event(6));
-    await expect(queue.flush()).rejects.toThrow(/無法套用/);
+    await expect(queue.flush()).rejects.toThrow(/Event 6|事件 6/);
     queue.enqueue(event(7));
-    await expect(queue.flush()).rejects.toThrow(/無法套用/);
+    await expect(queue.flush()).rejects.toThrow(/Event 6|事件 6/);
     expect(attempts).toBe(1);
     expect(received).toEqual([[6]]);
-    expect(errors).toEqual(["事件 6 無法套用：Illegal action"]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/Event 6|事件 6/);
   });
 });

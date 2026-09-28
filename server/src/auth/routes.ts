@@ -63,7 +63,7 @@ authRouter.post("/google", async (req, res) => {
 
 authRouter.get("/github", (req, res, next) => {
   if (!githubConfigured()) {
-    next(new HttpError(503, "尚未設定 GitHub 登入"));
+    next(new HttpError(503, "尚未設定 GitHub 登入", "GITHUB_NOT_CONFIGURED"));
     return;
   }
   const state = createGithubOAuthState();
@@ -112,7 +112,7 @@ authRouter.get("/github/callback", async (req, res) => {
 authRouter.post("/logout", (req, res) => {
   req.session.destroy((err) => {
     if (err) {
-      res.status(500).json({ error: "無法登出" });
+      res.status(500).json({ error: "無法登出", code: "LOGOUT_FAILED" });
       return;
     }
     res.clearCookie(SESSION_COOKIE, { path: "/" });

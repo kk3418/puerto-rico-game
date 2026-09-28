@@ -18,7 +18,7 @@ export function createGithubOAuthState(): string {
 
 export function githubAuthorizeUrl(state: string): string {
   if (!githubConfigured()) {
-    throw new HttpError(503, "尚未設定 GitHub 登入");
+    throw new HttpError(503, "尚未設定 GitHub 登入", "GITHUB_NOT_CONFIGURED");
   }
   const url = new URL(GITHUB_AUTHORIZE);
   url.searchParams.set("client_id", env.GITHUB_CLIENT_ID!);
@@ -44,7 +44,7 @@ type GithubEmail = {
 
 export async function exchangeGithubCode(code: string): Promise<ProviderProfile> {
   if (!githubConfigured()) {
-    throw new HttpError(503, "尚未設定 GitHub 登入");
+    throw new HttpError(503, "尚未設定 GitHub 登入", "GITHUB_NOT_CONFIGURED");
   }
 
   const tokenRes = await fetch(GITHUB_TOKEN, {
@@ -62,7 +62,7 @@ export async function exchangeGithubCode(code: string): Promise<ProviderProfile>
   });
   const tokenJson = (await tokenRes.json()) as { access_token?: string; error?: string };
   if (!tokenRes.ok || !tokenJson.access_token) {
-    throw new HttpError(401, "GitHub 授權失敗");
+    throw new HttpError(401, "GitHub 授權失敗", "GITHUB_AUTH_FAILED");
   }
 
   const headers = {
@@ -73,7 +73,7 @@ export async function exchangeGithubCode(code: string): Promise<ProviderProfile>
 
   const userRes = await fetch(GITHUB_USER, { headers });
   if (!userRes.ok) {
-    throw new HttpError(401, "無法讀取 GitHub 資料");
+    throw new HttpError(401, "無法讀取 GitHub 資料", "GITHUB_PROFILE_FAILED");
   }
   const user = (await userRes.json()) as GithubUser;
 

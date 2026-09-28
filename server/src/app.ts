@@ -30,15 +30,19 @@ export function createApp() {
   const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     if (err instanceof ZodError) {
       const first = err.issues[0];
-      res.status(400).json({ error: first?.message ?? "請求無效" });
+      res.status(400).json({ error: first?.message ?? "請求無效", code: "INVALID_REQUEST" });
       return;
     }
     if (err instanceof HttpError) {
-      res.status(err.status).json({ error: err.message });
+      res.status(err.status).json({
+        error: err.message,
+        ...(err.code ? { code: err.code } : {}),
+        ...(err.params ? { params: err.params } : {}),
+      });
       return;
     }
     console.error(err);
-    res.status(500).json({ error: "伺服器錯誤" });
+    res.status(500).json({ error: "伺服器錯誤", code: "SERVER_ERROR" });
   };
   app.use(errorHandler);
 

@@ -10,7 +10,7 @@ export function requireIdentity(req: Request): SessionIdentity {
   const userId = req.session.userId;
   const guestId = req.session.guestId;
   if (!userId && !guestId) {
-    throw new HttpError(401, "需要登入或訪客工作階段");
+    throw new HttpError(401, "需要登入或訪客工作階段", "AUTH_REQUIRED");
   }
   return { userId, guestId };
 }
@@ -18,7 +18,7 @@ export function requireIdentity(req: Request): SessionIdentity {
 export function requireUser(req: Request): { userId: string } {
   const userId = req.session.userId;
   if (!userId) {
-    throw new HttpError(401, "請先登入");
+    throw new HttpError(401, "請先登入", "LOGIN_REQUIRED");
   }
   return { userId };
 }

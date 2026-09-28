@@ -1,5 +1,6 @@
 import { ApiError } from "../api/client";
 import type { MatchEventInput } from "../api/types";
+import { formatApiError } from "../api/errorMessage";
 import i18n from "../i18n";
 
 export type MatchSyncPostInit = { keepalive?: boolean };
@@ -17,7 +18,10 @@ function isRetriableSyncError(err: unknown): boolean {
 }
 
 function toError(err: unknown, fallback: string): Error {
-  return err instanceof Error ? err : new Error(fallback);
+  if (err instanceof Error) {
+    return new Error(formatApiError(err, fallback));
+  }
+  return new Error(fallback);
 }
 
 export function createMatchSyncQueue(options: {
