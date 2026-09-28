@@ -52,6 +52,19 @@ describe("createMatchSyncQueue", () => {
     expect(started).toEqual([[1], [2]]);
   });
 
+  it("starts the post during flush so a refresh can send the buffered batch", () => {
+    let started = false;
+    const queue = createMatchSyncQueue({
+      debounceMs: 10_000,
+      async post() {
+        started = true;
+      },
+    });
+    queue.enqueue(event(1));
+    void queue.flush();
+    expect(started).toBe(true);
+  });
+
   it("does not return from flush until the in-flight batch has been posted", async () => {
     const gate = deferred<void>();
     let finished = false;

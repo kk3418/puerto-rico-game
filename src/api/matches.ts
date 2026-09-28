@@ -21,10 +21,12 @@ export function postMatchEvents(
   id: string,
   events: MatchEventInput[],
   playToken: string,
+  init?: { keepalive?: boolean },
 ): Promise<{ appended: number; eventCount: number }> {
   return api(`/matches/${id}/events`, {
     method: "POST",
     body: JSON.stringify({ playToken, events }),
+    keepalive: init?.keepalive,
   });
 }
 

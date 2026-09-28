@@ -15,7 +15,10 @@ export function useMatchSync(matchId: string, startSeq: number, playToken: strin
   const queueRef = useRef<MatchSyncQueue | null>(null);
   if (!queueRef.current) {
     queueRef.current = createMatchSyncQueue({
-      post: (events) => postMatchEvents(matchIdRef.current, events, playTokenRef.current).then(() => undefined),
+      post: (events) =>
+        postMatchEvents(matchIdRef.current, events, playTokenRef.current, { keepalive: true }).then(
+          () => undefined,
+        ),
       onPending: setPending,
       onError: (message) => {
         setSyncError(message);
@@ -25,7 +28,16 @@ export function useMatchSync(matchId: string, startSeq: number, playToken: strin
   }
 
   useEffect(() => {
-    return () => queueRef.current?.abort();
+    const onPageHide = () => {
+      void queueRef.current?.flush().catch(() => undefined);
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      // Do not abort here. React StrictMode runs this cleanup on the first mount,
+      // and abort() permanently drops every later action, so a refresh restores nothing.
+      void queueRef.current?.flush().catch(() => undefined);
+    };
   }, []);
 
   const flush = useCallback(() => queueRef.current!.flush(), []);

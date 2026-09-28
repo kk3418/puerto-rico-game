@@ -40,7 +40,8 @@ export function createMatchSyncQueue(options: {
   let buffer: MatchEventInput[] = [];
   let inFlight = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let chain = Promise.resolve();
+  let tail: Promise<void> = Promise.resolve();
+  let queuedFlushes = 0;
   let fatalError: Error | null = null;
   let aborted = false;
   let resumeSleep: (() => void) | undefined;
@@ -151,12 +152,17 @@ export function createMatchSyncQueue(options: {
   function flush() {
     if (aborted) return Promise.resolve();
     if (fatalError) return Promise.reject(fatalError);
-    const next = chain.then(sendLoop, sendLoop);
-    chain = next.then(
+    queuedFlushes += 1;
+    // Run immediately when idle so pagehide can start a keepalive fetch in the same turn.
+    const job = queuedFlushes === 1 ? sendLoop() : tail.then(sendLoop, sendLoop);
+    const settled = job.finally(() => {
+      queuedFlushes -= 1;
+    });
+    tail = settled.then(
       () => undefined,
       () => undefined,
     );
-    return next;
+    return job;
   }
 
   function enqueue(event: MatchEventInput) {
