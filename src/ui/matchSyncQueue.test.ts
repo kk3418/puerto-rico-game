@@ -52,6 +52,60 @@ describe("createMatchSyncQueue", () => {
     expect(started).toEqual([[1], [2]]);
   });
 
+  it("starts the post during flush so a refresh can send the buffered batch", () => {
+    let started = false;
+    const queue = createMatchSyncQueue({
+      debounceMs: 10_000,
+      async post() {
+        started = true;
+      },
+    });
+    queue.enqueue(event(1));
+    void queue.flush();
+    expect(started).toBe(true);
+  });
+
+  it("passes keepalive only when flush requests it", async () => {
+    const flags: Array<boolean | undefined> = [];
+    const queue = createMatchSyncQueue({
+      debounceMs: 10_000,
+      async post(_events, init) {
+        flags.push(init?.keepalive);
+      },
+    });
+    queue.enqueue(event(1));
+    await queue.flush();
+    queue.enqueue(event(2));
+    await queue.flush({ keepalive: true });
+    expect(flags).toEqual([undefined, true]);
+  });
+
+  it("keepalive flush re-posts the in-flight batch without waiting for the non-keepalive post", async () => {
+    const gate = deferred<void>();
+    const posts: Array<{ seqs: number[]; keepalive?: boolean }> = [];
+    const queue = createMatchSyncQueue({
+      debounceMs: 10_000,
+      async post(events, init) {
+        posts.push({ seqs: events.map((item) => item.seq), keepalive: init?.keepalive });
+        if (!init?.keepalive) await gate.promise;
+      },
+    });
+    queue.enqueue(event(1));
+    const regular = queue.flush();
+    await Promise.resolve();
+    expect(posts).toEqual([{ seqs: [1], keepalive: undefined }]);
+
+    queue.enqueue(event(2));
+    const keepalive = queue.flush({ keepalive: true });
+    expect(posts).toEqual([
+      { seqs: [1], keepalive: undefined },
+      { seqs: [1, 2], keepalive: true },
+    ]);
+
+    gate.resolve();
+    await Promise.all([regular, keepalive]);
+  });
+
   it("does not return from flush until the in-flight batch has been posted", async () => {
     const gate = deferred<void>();
     let finished = false;
@@ -101,65 +155,19 @@ describe("createMatchSyncQueue", () => {
       async post(events) {
         attempts += 1;
         received.push(events.map((item) => item.seq));
-        throw new ApiError(400, "事件 6 無法套用：Illegal action");
+        throw new ApiError(400, "事件 6 無法套用：ILLEGAL_ACTION", "EVENT_APPLY_FAILED", {
+          seq: 6,
+          detail: "ILLEGAL_ACTION",
+        });
       },
     });
     queue.enqueue(event(6));
-    await expect(queue.flush()).rejects.toThrow(/無法套用/);
+    await expect(queue.flush()).rejects.toThrow(/illegal action|非法行動/);
     queue.enqueue(event(7));
-    await expect(queue.flush()).rejects.toThrow(/無法套用/);
+    await expect(queue.flush()).rejects.toThrow(/illegal action|非法行動/);
     expect(attempts).toBe(1);
     expect(received).toEqual([[6]]);
-    expect(errors).toEqual(["事件 6 無法套用：Illegal action"]);
-  });
-
-  it("abort during an in-flight post does not requeue or report the later failure", async () => {
-    const gate = deferred<void>();
-    let attempts = 0;
-    const errors: Array<string | null> = [];
-    const queue = createMatchSyncQueue({
-      debounceMs: 10_000,
-      maxAttempts: 3,
-      onError: (message) => errors.push(message),
-      async post() {
-        attempts += 1;
-        await gate.promise;
-        throw new Error("network");
-      },
-    });
-    queue.enqueue(event(1));
-    const flushing = queue.flush();
-    await Promise.resolve();
-    queue.abort();
-    gate.resolve();
-    await expect(flushing).resolves.toBeUndefined();
-    queue.enqueue(event(2));
-    await expect(queue.flush()).resolves.toBeUndefined();
-    expect(attempts).toBe(1);
-    expect(errors).toEqual([]);
-  });
-
-  it("abort during retry sleep skips remaining attempts", async () => {
-    let attempts = 0;
-    const sleeping = deferred<void>();
-    const queue = createMatchSyncQueue({
-      debounceMs: 10_000,
-      maxAttempts: 3,
-      retryDelayMs: () => 10_000,
-      sleep: () => {
-        sleeping.resolve();
-        return new Promise(() => undefined);
-      },
-      async post() {
-        attempts += 1;
-        throw new Error("network");
-      },
-    });
-    queue.enqueue(event(4));
-    const flushing = queue.flush();
-    await sleeping.promise;
-    queue.abort();
-    await expect(flushing).resolves.toBeUndefined();
-    expect(attempts).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/illegal action|非法行動/);
   });
 });

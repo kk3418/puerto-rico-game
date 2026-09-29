@@ -7,11 +7,12 @@ import {
   type Action,
   type PlayerState,
 } from "../engine";
-import { GOOD_TONE, GOOD_ZH, ROLE_ZH, TILE_ZH } from "./labels";
+import { buildingName, GOOD_TONE, goodName, roleName, tileName } from "./labels";
 import type { Good, Role } from "../engine/types";
+import { useTranslation } from "react-i18next";
 import { GameIcon } from "./icons";
 import { Tooltip } from "./Tooltip";
-import { BUILDING_TIP } from "./tooltips";
+import { buildingTip } from "./tooltips";
 
 export function PlayerBoard({
   player,
@@ -38,6 +39,7 @@ export function PlayerBoard({
   isGovernor?: boolean;
   mayorReceived?: number;
 }) {
+  const { t } = useTranslation("game");
   const goods = (Object.keys(player.goods) as Good[]).filter((g) => player.goods[g] > 0);
   const colonists = totalColonists(player);
   const emptyCitySpaces = Math.max(0, CITY_SPACES - citySpacesUsed(player));
@@ -46,39 +48,54 @@ export function PlayerBoard({
       <header className="player-status">
         <h2>
           {isGovernor && (
-            <Tooltip content="總督" className="governor-mark">
-              <GameIcon kind="governor" size={28} label="總督" />
+            <Tooltip content={t("governor")} className="governor-mark">
+              <GameIcon kind="governor" size={28} label={t("governor")} />
             </Tooltip>
           )}
           {player.name}
         </h2>
         <div className="status-resources">
-          <span className="icon-label" title="金幣"><GameIcon kind="coin" />{player.doubloons}</span>
+          <span className="icon-label" title={t("doubloons")}>
+            <GameIcon kind="coin" />
+            {player.doubloons}
+          </span>
           {hideVp ? (
             <HiddenVpChips vp={player.vpChips} />
           ) : (
-            <span className="icon-label" title="勝利分"><GameIcon kind="vp" />{player.vpChips}</span>
+            <span className="icon-label" title={t("victoryPoints")}>
+              <GameIcon kind="vp" />
+              {player.vpChips}
+            </span>
           )}
-          <span className="icon-label" title={mayorReceived === undefined ? "殖民者總數" : "本輪新增／殖民者總數"}>
-            <GameIcon kind="colonist" />{mayorReceived === undefined ? colonists : `${mayorReceived}/${colonists}`}
+          <span
+            className="icon-label"
+            title={mayorReceived === undefined ? t("colonistTotal") : t("colonistNewTotal")}
+          >
+            <GameIcon kind="colonist" />
+            {mayorReceived === undefined ? colonists : `${mayorReceived}/${colonists}`}
           </span>
-          {player.unplacedColonists > 0 && <span className="status-note">待安置 {player.unplacedColonists}</span>}
-          {player.sanJuan > 0 && <span className="status-note">聖胡安 {player.sanJuan}</span>}
+          {player.unplacedColonists > 0 && (
+            <span className="status-note">{t("unplaced", { n: player.unplacedColonists })}</span>
+          )}
+          {player.sanJuan > 0 && <span className="status-note">{t("sanJuan", { n: player.sanJuan })}</span>}
         </div>
         <div
           className={`role-seat ${chosenRole ? "occupied" : ""} ${isActiveRoleOwner ? "active" : ""}`}
-          aria-label={chosenRole ? `本輪角色：${ROLE_ZH[chosenRole]}` : "本輪角色"}
+          aria-label={chosenRole ? t("roleThisRound", { role: roleName(chosenRole) }) : t("roleSeat")}
         >
           {chosenRole ? (
-            <><GameIcon kind={chosenRole} size={22} /><span>{ROLE_ZH[chosenRole]}</span></>
+            <>
+              <GameIcon kind={chosenRole} size={22} />
+              <span>{roleName(chosenRole)}</span>
+            </>
           ) : (
-            <span>角色位</span>
+            <span>{t("emptyRoleSeat")}</span>
           )}
         </div>
       </header>
 
       <section className="player-zone city-zone">
-        <h3>建築物區</h3>
+        <h3>{t("cityZone")}</h3>
         <div className="city-grid">
           {player.city.map((b) => {
             const def = getBuilding(b.buildingId);
@@ -89,7 +106,7 @@ export function PlayerBoard({
             return (
               <Tooltip
                 key={b.instanceId}
-                content={BUILDING_TIP[b.buildingId]}
+                content={buildingTip(b.buildingId)}
                 className={`city-slot ${def.citySpaces > 1 ? "wide" : ""}`}
               >
                 <span className={`city-card ${remove ? "editable" : ""}`}>
@@ -98,8 +115,11 @@ export function PlayerBoard({
                     disabled={!humanTurn || !place}
                     onClick={() => place && onAct(place)}
                   >
-                    <span className="building-name">{def.nameZh}</span>
-                    <span className="colonist-circles" aria-label={`${b.colonists}/${def.circles} 名殖民者`}>
+                    <span className="building-name">{buildingName(b.buildingId)}</span>
+                    <span
+                      className="colonist-circles"
+                      aria-label={t("colonistsOnBuilding", { filled: b.colonists, circles: def.circles })}
+                    >
                       {Array.from({ length: def.circles }).map((_, index) => (
                         <span key={index} className={index < b.colonists ? "filled" : ""}>
                           {index < b.colonists && <GameIcon kind="colonist" size={self ? 18 : 15} />}
@@ -113,7 +133,7 @@ export function PlayerBoard({
                       className="remove-colonist"
                       onClick={() => onAct(remove)}
                       disabled={!humanTurn}
-                      aria-label={`從${def.nameZh}取回一名殖民者`}
+                      aria-label={t("removeColonist", { building: buildingName(b.buildingId) })}
                     >
                       −<GameIcon kind="colonist" size={13} />
                     </button>
@@ -123,44 +143,48 @@ export function PlayerBoard({
             );
           })}
           {Array.from({ length: emptyCitySpaces }).map((_, index) => (
-            <div key={`empty-city-${index}`} className="city-empty" aria-label="空的建築格" />
+            <div key={`empty-city-${index}`} className="city-empty" aria-label={t("emptyCitySpace")} />
           ))}
         </div>
       </section>
 
       <section className="player-zone island-zone">
-        <h3>種植園區</h3>
+        <h3>{t("islandZone")}</h3>
         <div className="island-grid">
-        {player.island.map((tile, index) => {
-          const place = legal.find(
-            (a) => a.type === "mayorPlace" && a.target.kind === "island" && a.target.index === index,
-          );
-          const remove = findMayorRemove(legal, { kind: "island", index });
-          const action = place ?? remove;
-          return (
-            <button
-              key={index}
-              className={`plot ${place ? "lit" : ""} ${remove ? "editable" : ""}`}
-              style={{ background: GOOD_TONE[tile.type] }}
-              disabled={!humanTurn || !action}
-              onClick={() => action && onAct(action)}
-              title={`${TILE_ZH[tile.type]}${remove ? "（點擊取回殖民者）" : ""}`}
-            >
-              <GameIcon kind={tile.type} size={self ? 24 : 18} />
-              <span>{TILE_ZH[tile.type]}</span>
-              {tile.colonists > 0 && <span className="colonist-dot" aria-label={`${tile.colonists} 名殖民者`}><GameIcon kind="colonist" size={15} /></span>}
-            </button>
-          );
-        })}
-        {Array.from({ length: Math.max(0, 12 - player.island.length) }).map((_, i) => (
-          <div key={`empty-${i}`} className="plot empty" aria-label="空的島嶼格" />
-        ))}
+          {player.island.map((tile, index) => {
+            const place = legal.find(
+              (a) => a.type === "mayorPlace" && a.target.kind === "island" && a.target.index === index,
+            );
+            const remove = findMayorRemove(legal, { kind: "island", index });
+            const action = place ?? remove;
+            return (
+              <button
+                key={index}
+                className={`plot ${place ? "lit" : ""} ${remove ? "editable" : ""}`}
+                style={{ background: GOOD_TONE[tile.type] }}
+                disabled={!humanTurn || !action}
+                onClick={() => action && onAct(action)}
+                title={`${tileName(tile.type)}${remove ? t("clickReturnColonist") : ""}`}
+              >
+                <GameIcon kind={tile.type} size={self ? 24 : 18} />
+                <span>{tileName(tile.type)}</span>
+                {tile.colonists > 0 && (
+                  <span className="colonist-dot" aria-label={t("colonistsCount", { n: tile.colonists })}>
+                    <GameIcon kind="colonist" size={15} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          {Array.from({ length: Math.max(0, 12 - player.island.length) }).map((_, i) => (
+            <div key={`empty-${i}`} className="plot empty" aria-label={t("emptyIslandSpace")} />
+          ))}
         </div>
       </section>
 
       {goods.length > 0 && (
         <section className="player-zone goods-zone">
-          <h3>貨物</h3>
+          <h3>{t("goods")}</h3>
           <div className="goods-row">
             {goods.map((g) => {
               const sell = legal.find((a) => a.type === "traderSell" && a.good === g);
@@ -169,21 +193,28 @@ export function PlayerBoard({
               const keep = legal.filter((a) => a.type === "captainStore" && (a.extra === g || a.keepTypes.includes(g)));
               return (
                 <div key={g} className="good-chip" style={{ background: GOOD_TONE[g] }}>
-                  <span className="icon-label"><GameIcon kind={g} size={26} />{GOOD_ZH[g]} ×{player.goods[g]}</span>
+                  <span className="icon-label">
+                    <GameIcon kind={g} size={26} />
+                    {goodName(g)} ×{player.goods[g]}
+                  </span>
                   {sell && (
-                    <button onClick={() => onAct(sell)} disabled={!humanTurn}>賣</button>
+                    <button onClick={() => onAct(sell)} disabled={!humanTurn}>
+                      {t("sell")}
+                    </button>
                   )}
                   {extra && (
-                    <button onClick={() => onAct(extra)} disabled={!humanTurn}>多拿</button>
+                    <button onClick={() => onAct(extra)} disabled={!humanTurn}>
+                      {t("extra")}
+                    </button>
                   )}
                   {load.map((a, i) =>
                     a.type === "captainLoad" ? (
                       <button key={i} onClick={() => onAct(a)} disabled={!humanTurn}>
-                        {a.destination === "wharf" ? "碼頭" : `船${a.destination + 1}`}
+                        {a.destination === "wharf" ? t("wharf") : t("shipN", { n: a.destination + 1 })}
                       </button>
                     ) : null,
                   )}
-                  {keep.length > 0 && humanTurn && <span className="hint">可保留</span>}
+                  {keep.length > 0 && humanTurn && <span className="hint">{t("canKeep")}</span>}
                 </div>
               );
             })}
@@ -195,11 +226,12 @@ export function PlayerBoard({
 }
 
 function HiddenVpChips({ vp }: { vp: number }) {
+  const { t } = useTranslation("game");
   const tokens = vpTokenCount(vp);
   if (tokens <= 0) return null;
   return (
-    <Tooltip content="只公開籌碼枚數，不公開面額與總分" className="vp-chips">
-      <span className="vp-chip-stack" aria-label={`${tokens} 枚面朝下的勝利分籌碼`}>
+    <Tooltip content={t("hiddenVpTip")} className="vp-chips">
+      <span className="vp-chip-stack" aria-label={t("hiddenVpAria", { n: tokens })}>
         <GameIcon kind="vpFive" size={20} />
         <GameIcon kind="vpOne" size={15} />
       </span>

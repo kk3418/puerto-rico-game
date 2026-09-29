@@ -3,9 +3,11 @@ import { HeuristicAgent, HEURISTIC_TABLE_PAUSE_MS } from "../agents/heuristic";
 import { dispatchAction } from "../agents/turnLoop";
 import {
   applyAction,
+  applyFailureDetail,
   assertSerializable,
   cloneViaJson,
   createInitialState,
+  EngineError,
   getActorIndex,
   getLegalActions,
   occupiedBuilding,
@@ -23,7 +25,13 @@ import {
 } from "../engine";
 
 function setup(playerCount: 3 | 4 | 5 = 3, seed = 1): GameState {
-  return createInitialState({ playerCount, difficulty: "balanced", seed, governorIndex: 0 });
+  return createInitialState({
+    playerCount,
+    difficulty: "balanced",
+    seed,
+    humanName: "Ada",
+    governorIndex: 0,
+  });
 }
 
 function play(state: GameState, action: Action): GameState {
@@ -37,6 +45,23 @@ function choose(state: GameState, role: string): GameState {
 }
 
 describe("setup", () => {
+  it("rejects a blank human nickname", () => {
+    expect(() =>
+      createInitialState({ playerCount: 3, difficulty: "balanced", seed: 1, humanName: "  " }),
+    ).toThrow(/humanName/);
+  });
+
+  it("throws EngineError codes for illegal actions", () => {
+    const s = setup();
+    try {
+      play(s, { type: "builderBuild", buildingId: "wharf" });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(EngineError);
+      expect((err as EngineError).code).toBe("ILLEGAL_ACTION");
+      expect(applyFailureDetail(err)).toBe("ILLEGAL_ACTION");
+    }
+  });
   it("sets 3/4/5 player supplies, money, and ships", () => {
     for (const n of [3, 4, 5] as const) {
       const s = setup(n);
@@ -65,6 +90,7 @@ describe("setup", () => {
       playerCount: 4,
       difficulty: "balanced",
       seed: 1,
+      humanName: "Ada",
       governorIndex: 2,
     });
     expect(s4g2.players.map((p) => p.island[0]!.type)).toEqual(["corn", "corn", "indigo", "indigo"]);
@@ -73,11 +99,12 @@ describe("setup", () => {
   it("picks the first governor from the seed when not pinned", () => {
     const governors = new Set<number>();
     for (let seed = 0; seed < 40; seed++) {
-      const s = createInitialState({ playerCount: 4, difficulty: "balanced", seed });
+      const s = createInitialState({ playerCount: 4, difficulty: "balanced", seed, humanName: "Ada" });
       expect(s.governorIndex).toBeGreaterThanOrEqual(0);
       expect(s.governorIndex).toBeLessThan(4);
       expect(s.chooserIndex).toBe(s.governorIndex);
-      expect(s.log[0]!.text).toContain(s.players[s.governorIndex]!.name);
+      expect(s.log[0]!.key).toBe("roundStart");
+      expect(s.log[0]!.params?.governor).toBe(s.players[s.governorIndex]!.name);
       const g = s.governorIndex;
       expect(s.players[g]!.island[0]!.type).toBe("indigo");
       expect(s.players[(g + 1) % 4]!.island[0]!.type).toBe("indigo");

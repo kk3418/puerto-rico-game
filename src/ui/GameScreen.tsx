@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
+import { formatEndReason, formatLogEntry } from "../i18n/format";
 import { abandonMatch, finishMatch } from "../api/matches";
+import { formatApiError } from "../api/errorMessage";
 import { clearLastMatchId } from "../api/auth";
 import { HeuristicAgent, HumanAgent, dispatchAction, type PlayerAgent } from "../agents";
 import {
@@ -18,6 +22,7 @@ import { Board } from "./Board";
 import { EndScreen } from "./EndScreen";
 import { PlayerBoard } from "./PlayerBoard";
 import { Dialog } from "./Dialog";
+import { LanguageSelect } from "./LanguageSelect";
 import { phasePrompt } from "./labels";
 import { useMatchSync } from "./useMatchSync";
 import { PLAYER_BOARD_PANEL_ID, PlayerSeats, seatTabOrder } from "./PlayerSeats";
@@ -44,6 +49,7 @@ export function GameScreen({
   playToken: string;
   onExit: () => void;
 }) {
+  const { t } = useTranslation();
   const humanRef = useRef(new HumanAgent());
   const startRef = useRef<GameState | null>(null);
   if (!startRef.current) {
@@ -95,11 +101,13 @@ export function GameScreen({
         const player = current.players[idx]!;
         const legal = getLegalActions(current);
         if (legal.length === 0) {
-          throw new Error(`${player.name}在${current.phase.type}沒有合法行動`);
+          throw new Error(
+            i18n.t("noLegalAction", { ns: "game", name: player.name, phase: current.phase.type }),
+          );
         }
         const agent = agents[player.id];
         if (!agent) {
-          throw new Error(`找不到代理人：${player.id}`);
+          throw new Error(i18n.t("missingAgent", { ns: "game", id: player.id }));
         }
         setTurnSeat(idx);
         if (player.isHuman) {
@@ -132,10 +140,11 @@ export function GameScreen({
       setAwaitingHuman(false);
     }
 
-    void loop(initial).catch((err: Error) => {
-      if (!cancelled && err.message !== "cancelled") {
+    void loop(initial).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : formatApiError(err);
+      if (!cancelled && message !== "cancelled") {
         console.error(err);
-        setError(err.message);
+        setError(formatApiError(err, message));
         setBusy(false);
         setAwaitingHuman(false);
       }
@@ -178,8 +187,8 @@ export function GameScreen({
       setServerReason(result.endReason);
       setVerified(result.verified);
     })()
-      .catch((err: Error) => {
-        if (!cancelled) setFinishError(err.message);
+      .catch((err: unknown) => {
+        if (!cancelled) setFinishError(formatApiError(err));
       })
       .finally(() => {
         if (!cancelled) setFinishing(false);
@@ -222,7 +231,7 @@ export function GameScreen({
     try {
       humanRef.current.submit(action);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "行動失敗");
+      setError(formatApiError(err, i18n.t("actionFailed", { ns: "game" })));
     }
   }
 
@@ -234,7 +243,7 @@ export function GameScreen({
     try {
       await flush();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "離開失敗");
+      setError(formatApiError(err, i18n.t("leaveFailed", { ns: "game" })));
       return;
     }
     onExit();
@@ -248,7 +257,7 @@ export function GameScreen({
       }
       clearLastMatchId();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "離開失敗");
+      setError(formatApiError(err, i18n.t("leaveFailed", { ns: "game" })));
       return;
     }
     onExit();
@@ -258,7 +267,7 @@ export function GameScreen({
     return (
       <EndScreen
         scores={serverScores ?? state.scores}
-        reason={serverReason ?? state.endReason}
+        reason={formatEndReason(serverReason ?? state.endReason, t)}
         verified={verified}
         finishing={finishing}
         finishError={finishError}
@@ -271,7 +280,7 @@ export function GameScreen({
               setServerReason(result.endReason);
               setVerified(result.verified);
             })
-            .catch((err: Error) => setFinishError(err.message))
+            .catch((err: unknown) => setFinishError(formatApiError(err)))
             .finally(() => setFinishing(false));
         }}
         onAgain={onExit}
@@ -288,13 +297,14 @@ export function GameScreen({
   return (
     <div className="table">
       <header className="table-top">
-        <p className="brand-mini">Puerto Rico</p>
+        <p className="brand-mini">{t("brand")}</p>
         <p>
-          第 {state.round} 輪 · 總督 {state.players[state.governorIndex]?.name}
-          {state.endTriggered ? " · 終局已觸發" : ""}
-          {syncError ? " · 同步失敗" : pending > 0 ? " · 同步中" : ""}
+          {t("roundHeader", { ns: "game", round: state.round, name: state.players[state.governorIndex]?.name })}
+          {state.endTriggered ? t("endTriggered", { ns: "game" }) : ""}
+          {syncError ? t("syncFailed", { ns: "game" }) : pending > 0 ? t("syncing", { ns: "game" }) : ""}
         </p>
         <div className="table-actions">
+          <LanguageSelect />
           <button
             ref={logToggleRef}
             type="button"
@@ -303,10 +313,10 @@ export function GameScreen({
             aria-controls="arena-log-panel"
             onClick={() => setLogOpen((open) => !open)}
           >
-            航海日誌
+            {t("shipLog", { ns: "game" })}
           </button>
           <button type="button" className="text-btn" onClick={onLeave}>
-            離開
+            {t("leave", { ns: "game" })}
           </button>
         </div>
       </header>
@@ -314,15 +324,15 @@ export function GameScreen({
         ref={logRef}
         id="arena-log-panel"
         className="arena-log"
-        aria-label="航海日誌"
+        aria-label={t("shipLog", { ns: "game" })}
         hidden={!logOpen}
       >
         {state.log.length === 0 ? (
-          <p className="log">尚無紀錄</p>
+          <p className="log">{t("noLog", { ns: "game" })}</p>
         ) : (
           <ol className="log" ref={logListRef}>
             {state.log.map((e) => (
-              <li key={e.id}>{e.text}</li>
+              <li key={e.id}>{formatLogEntry(e, t)}</li>
             ))}
           </ol>
         )}
@@ -331,21 +341,21 @@ export function GameScreen({
       </aside>
       {dialog === "leave" && (
         <Dialog
-          title="是否要存檔再離開嗎"
+          title={t("leaveTitle", { ns: "game" })}
           showClose
           onClose={() => setDialog(null)}
           actions={
             <>
               <button type="button" className="text-btn" onClick={() => void onLeaveAbandon()}>
-                否
+                {t("no", { ns: "game" })}
               </button>
               <button type="button" className="text-btn" onClick={() => void onLeaveKeep()}>
-                是
+                {t("yes", { ns: "game" })}
               </button>
             </>
           }
         >
-          <p>按「否」會放棄本局，進度將無法繼續。</p>
+          <p>{t("leaveBody", { ns: "game" })}</p>
         </Dialog>
       )}
 

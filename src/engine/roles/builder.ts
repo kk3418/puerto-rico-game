@@ -63,8 +63,7 @@ export function applyBuilder(state: GameState, action: Action): void {
       building.colonists = takeColonistFromSupplyOrShip(state);
     }
     player.city.push(building);
-    const def = getBuilding(id);
-    pushLog(state, `${player.name}花費 ${cost} 金幣建造${def.nameZh}。`);
+    pushLog(state, "built", { player: player.name, cost, building: id });
     checkCityFull(state);
   }
 

@@ -85,7 +85,10 @@ export interface RoleSlot {
 
 export interface LogEntry {
   id: number;
-  text: string;
+  key?: string;
+  params?: Record<string, string | number>;
+  /** Present on older saves and until structured log keys are written. */
+  text?: string;
 }
 
 export interface ScoreBreakdown {
@@ -182,7 +185,7 @@ export interface SetupOptions {
   playerCount: PlayerCount;
   difficulty: Difficulty;
   seed?: number;
-  humanName?: string;
+  humanName: string;
   /** When omitted, the first governor is chosen from the seed/RNG. */
   governorIndex?: number;
 }

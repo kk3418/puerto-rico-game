@@ -1,3 +1,4 @@
+import { EngineError } from "./errors";
 import { beginChosenRole } from "./flow";
 import { actorIndex, actionsEqual, cloneState, isLegalAction, pushLog } from "./helpers";
 import { applyBuilder, legalBuilder } from "./roles/builder";
@@ -42,21 +43,24 @@ export function applyAction(state: GameState, action: Action): GameState {
   const next = cloneState(state);
   const legal = getLegalActions(next);
   if (!isLegalAction(next, action, legal)) {
-    throw new Error(`Illegal action: ${JSON.stringify(action)}`);
+    throw new EngineError("ILLEGAL_ACTION", `Illegal action: ${JSON.stringify(action)}`);
   }
 
   switch (action.type) {
     case "chooseRole": {
       const slot = next.roles.find((r) => r.id === action.roleId);
-      if (!slot) throw new Error("Unknown role");
+      if (!slot) throw new EngineError("UNKNOWN_ROLE", "Unknown role");
       const chooser = next.players[next.chooserIndex]!;
       chooser.doubloons += slot.doubloons;
       const bonus = slot.doubloons;
       slot.doubloons = 0;
       slot.taken = true;
       slot.takenBy = next.chooserIndex;
-      const bonusText = bonus > 0 ? `並拿取牌上 ${bonus} 金幣` : "";
-      pushLog(next, `${chooser.name}選擇了${roleLabel(slot.role)}${bonusText}。`);
+      if (bonus > 0) {
+        pushLog(next, "choseRoleBonus", { player: chooser.name, role: slot.role, bonus });
+      } else {
+        pushLog(next, "choseRole", { player: chooser.name, role: slot.role });
+      }
       beginChosenRole(next, slot.role, next.chooserIndex);
       break;
     }
@@ -88,19 +92,6 @@ export function applyAction(state: GameState, action: Action): GameState {
   }
 
   return next;
-}
-
-export function roleLabel(role: string): string {
-  const labels: Record<string, string> = {
-    settler: "拓荒者",
-    mayor: "市長",
-    builder: "建築師",
-    craftsman: "工匠",
-    trader: "商人",
-    captain: "船長",
-    prospector: "淘金者",
-  };
-  return labels[role] ?? role;
 }
 
 export { actionsEqual };

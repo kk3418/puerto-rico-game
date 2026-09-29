@@ -21,10 +21,10 @@ export function beginCraftsman(state: GameState, ownerIndex: number): void {
     if (occupiedBuilding(player, "factory") && produced.length > 0) {
       const money = FACTORY_MONEY[produced.length] ?? 5;
       player.doubloons += money;
-      if (money) pushLog(state, `${player.name}的工廠產出 ${money} 金幣。`);
+      if (money) pushLog(state, "factoryGold", { player: player.name, money });
     }
     if (produced.length) {
-      pushLog(state, `${player.name}生產了貨物。`);
+      pushLog(state, "produced", { player: player.name });
     }
     if (idx === ownerIndex) ownerProduced = produced;
     idx = (idx + 1) % state.players.length;
@@ -53,7 +53,7 @@ export function applyCraftsman(state: GameState, action: Action): void {
   if (action.good && state.goodsSupply[action.good] > 0) {
     state.goodsSupply[action.good] -= 1;
     player.goods[action.good] += 1;
-    pushLog(state, `${player.name}（工匠特權）多拿了 1 個貨物。`);
+    pushLog(state, "craftsmanPrivilege", { player: player.name });
   }
   completeRole(state);
 }

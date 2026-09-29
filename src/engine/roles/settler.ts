@@ -70,7 +70,7 @@ export function applySettler(state: GameState, action: Action): void {
       const [tile] = drawPlantations(state, 1);
       if (tile) {
         addTile(state, phase.actorIndex, tile, false);
-        pushLog(state, `${player.name}以莊園抽到${tileName(tile)}。`);
+        pushLog(state, "haciendaDraw", { player: player.name, tile });
       }
     }
     state.phase = { type: "settlerTake", actorIndex: phase.actorIndex };
@@ -87,13 +87,13 @@ export function applySettler(state: GameState, action: Action): void {
     if (tile && islandSpacesLeft(player) > 0) {
       state.faceUpPlantations.splice(action.index, 1);
       addTile(state, phase.actorIndex, tile, true);
-      pushLog(state, `${player.name}拿了${tileName(tile)}。`);
+      pushLog(state, "tookTile", { player: player.name, tile });
     }
   } else if (action.source === "quarry") {
     if (state.quarrySupply > 0 && islandSpacesLeft(player) > 0) {
       state.quarrySupply -= 1;
       addTile(state, phase.actorIndex, "quarry", true);
-      pushLog(state, `${player.name}拿了採石場。`);
+      pushLog(state, "tookTile", { player: player.name, tile: "quarry" });
     }
   }
 
@@ -110,14 +110,3 @@ function nextSettler(state: GameState, current: number): void {
   startSettlerPlayer(state, next);
 }
 
-function tileName(tile: TileType): string {
-  const names: Record<TileType, string> = {
-    corn: "玉米田",
-    indigo: "靛藍田",
-    sugar: "甘蔗田",
-    tobacco: "菸草田",
-    coffee: "咖啡田",
-    quarry: "採石場",
-  };
-  return names[tile];
-}

@@ -86,7 +86,7 @@ export function scoreGame(state: GameState): ScoreBreakdown[] {
 export function checkCityFull(state: GameState): void {
   for (const player of state.players) {
     if (citySpacesUsed(player) >= CITY_SPACES) {
-      triggerEnd(state, `${player.name}的城市已滿`);
+      triggerEnd(state, "cityFull", { player: player.name });
       return;
     }
   }

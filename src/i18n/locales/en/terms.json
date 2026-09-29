@@ -1,0 +1,93 @@
+{
+  "roles": {
+    "settler": "Settler",
+    "mayor": "Mayor",
+    "builder": "Builder",
+    "craftsman": "Craftsman",
+    "trader": "Trader",
+    "captain": "Captain",
+    "prospector": "Prospector"
+  },
+  "goods": {
+    "corn": "Corn",
+    "indigo": "Indigo",
+    "sugar": "Sugar",
+    "tobacco": "Tobacco",
+    "coffee": "Coffee"
+  },
+  "tiles": {
+    "corn": "Corn",
+    "indigo": "Indigo",
+    "sugar": "Sugar",
+    "tobacco": "Tobacco",
+    "coffee": "Coffee",
+    "quarry": "Quarry"
+  },
+  "plantations": {
+    "corn": "Corn plantation",
+    "indigo": "Indigo plantation",
+    "sugar": "Sugar plantation",
+    "tobacco": "Tobacco plantation",
+    "coffee": "Coffee plantation",
+    "quarry": "Quarry"
+  },
+  "buildings": {
+    "smallIndigo": "Small Indigo Plant",
+    "smallSugar": "Small Sugar Mill",
+    "largeIndigo": "Indigo Plant",
+    "largeSugar": "Sugar Mill",
+    "tobaccoStorage": "Tobacco Storage",
+    "coffeeRoaster": "Coffee Roaster",
+    "smallMarket": "Small Market",
+    "hacienda": "Hacienda",
+    "constructionHut": "Construction Hut",
+    "smallWarehouse": "Small Warehouse",
+    "hospice": "Hospice",
+    "office": "Office",
+    "largeMarket": "Large Market",
+    "largeWarehouse": "Large Warehouse",
+    "factory": "Factory",
+    "university": "University",
+    "harbor": "Harbor",
+    "wharf": "Wharf",
+    "guildHall": "Guild Hall",
+    "residence": "Residence",
+    "fortress": "Fortress",
+    "customsHouse": "Customs House",
+    "cityHall": "City Hall"
+  },
+  "roleTips": {
+    "settler": "Players take plantations in turn; the privilege may take a quarry instead.",
+    "mayor": "Distribute colonists from the colonist ship; the privilege takes 1 extra colonist.",
+    "builder": "Players may buy one building in turn; the privilege pays 1 doubloon less.",
+    "craftsman": "All players take goods from their occupied production chains; the privilege takes 1 extra.",
+    "trader": "Players may sell a good the trading house does not already have; the privilege earns 1 extra doubloon.",
+    "captain": "Players take turns loading matching goods onto ships for victory points; the privilege scores 1 extra VP.",
+    "prospector": "Only the role owner gains 1 doubloon."
+  },
+  "buildingTips": {
+    "smallIndigo": "Produces indigo; each occupied circle processes 1 indigo.",
+    "smallSugar": "Produces sugar; each occupied circle processes 1 sugar.",
+    "largeIndigo": "Processes up to 3 indigo.",
+    "largeSugar": "Processes up to 3 sugar.",
+    "tobaccoStorage": "Processes up to 3 tobacco.",
+    "coffeeRoaster": "Processes up to 2 coffee.",
+    "smallMarket": "When selling a good, gain 1 extra doubloon.",
+    "hacienda": "During the settler phase, you may first take 1 extra plantation from the top of the stack.",
+    "constructionHut": "During the settler phase you may take a quarry, even if you are not the Settler.",
+    "smallWarehouse": "At the end of the captain phase, you may keep 1 type of good.",
+    "hospice": "When you take a plantation or quarry, place 1 colonist on it if the supply allows.",
+    "office": "When selling, you may ignore the trading house's same-good restriction.",
+    "largeMarket": "When selling a good, gain 2 extra doubloons.",
+    "largeWarehouse": "At the end of the captain phase, you may keep 2 types of goods.",
+    "factory": "During the craftsman phase, gain doubloons based on how many kinds of goods you produced.",
+    "university": "When you build a building, place 1 colonist on it if the supply allows.",
+    "harbor": "During the captain phase, score 1 extra victory point each time you load.",
+    "wharf": "Once per captain phase, you may use your own virtual cargo ship.",
+    "guildHall": "Game end: +1 VP per small production building; +2 VP per large production building.",
+    "residence": "Game end: score based on occupied plantations and quarries.",
+    "fortress": "Game end: 1 VP per 3 colonists.",
+    "customsHouse": "Game end: 1 VP per 4 victory point chips.",
+    "cityHall": "Game end: 1 VP per violet building (including City Hall)."
+  }
+}

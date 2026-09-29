@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import {
   clearLastMatchId,
   createGuest,
@@ -8,6 +10,7 @@ import {
   writeStoredNickname,
 } from "../api/auth";
 import { ApiError } from "../api/client";
+import { formatApiError } from "../api/errorMessage";
 import { createMatch, getMatchState } from "../api/matches";
 import type { AuthMe, MatchSummary } from "../api/types";
 import type { Difficulty, GameState, PlayerCount } from "../engine";
@@ -44,10 +47,10 @@ export function App() {
 
   const enterMatch = useCallback((match: MatchSummary, state?: GameState) => {
     if (!match.playToken) {
-      throw new Error("無法開始對局");
+      throw new Error(i18n.t("cannotStartMatch"));
     }
     if (match.seed == null && !state) {
-      throw new Error("無法開始對局");
+      throw new Error(i18n.t("cannotStartMatch"));
     }
     writeLastMatchId(match.id);
     setPlay({
@@ -75,7 +78,7 @@ export function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("authError")) {
-      setAuthError("第三方登入失敗");
+      setAuthError(i18n.t("oauthFailed"));
       window.history.replaceState({}, "", window.location.pathname);
     }
     void (async () => {
@@ -90,8 +93,8 @@ export function App() {
         }
       }
     })()
-      .catch((err: Error) => {
-        setBootError(err.message || "無法連線伺服器");
+      .catch((err: unknown) => {
+        setBootError(formatApiError(err, i18n.t("serverUnreachable")));
       })
       .finally(() => {
         setBooting(false);
@@ -110,32 +113,25 @@ export function App() {
     try {
       await resumeLiveMatch(match.id);
     } catch {
-      throw new Error("無法找到該局遊戲");
+      throw new Error(i18n.t("matchNotFound"));
     }
   }
 
   async function continueLast() {
     const id = readLastMatchId();
     if (!id) {
-      throw new Error("無法找到該局遊戲");
+      throw new Error(i18n.t("matchNotFound"));
     }
     try {
       await resumeLiveMatch(id);
     } catch {
       clearLastMatchId();
-      throw new Error("無法找到該局遊戲");
+      throw new Error(i18n.t("matchNotFound"));
     }
   }
 
   if (booting) {
-    return (
-      <div className="setup">
-        <main className="setup-main">
-          <p className="brand">Puerto Rico</p>
-          <p>載入中…</p>
-        </main>
-      </div>
-    );
+    return <BootScreen />;
   }
 
   if (!play) {
@@ -168,5 +164,17 @@ export function App() {
         setPlay(null);
       }}
     />
+  );
+}
+
+function BootScreen() {
+  const { t } = useTranslation();
+  return (
+    <div className="setup">
+      <main className="setup-main">
+        <p className="brand">{t("brand")}</p>
+        <p>{t("loading")}</p>
+      </main>
+    </div>
   );
 }

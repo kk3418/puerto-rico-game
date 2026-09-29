@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { formatApiError } from "../api/errorMessage";
 import { getMyMatches, getMyStats } from "../api/matches";
 import type { MatchSummary, UserStats } from "../api/types";
 
@@ -9,6 +11,7 @@ export function StatsPanel({
   authenticated: boolean;
   onContinue: (match: MatchSummary) => void;
 }) {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [matches, setMatches] = useState<MatchSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -18,12 +21,13 @@ export function StatsPanel({
     let cancelled = false;
     void Promise.all([getMyStats(), getMyMatches()])
       .then(([nextStats, nextMatches]) => {
-        if (cancelled) return;
-        setStats(nextStats);
-        setMatches(nextMatches.matches);
+        if (!cancelled) {
+          setStats(nextStats);
+          setMatches(nextMatches.matches);
+        }
       })
       .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
+        if (!cancelled) setError(formatApiError(err));
       });
     return () => {
       cancelled = true;
@@ -36,25 +40,35 @@ export function StatsPanel({
 
   return (
     <section className="stats-panel">
-      <h2>我的戰績</h2>
+      <h2>{t("myRecord")}</h2>
       {error && <p className="error">{error}</p>}
       {stats && (
         <p>
-          {stats.gamesPlayed} 場已驗證 · 勝 {stats.gamesWon} · 最佳 {stats.bestScore} 分
+          {t("statsLine", {
+            played: stats.gamesPlayed,
+            won: stats.gamesWon,
+            best: stats.bestScore,
+          })}
         </p>
       )}
       {resumable && (
         <button type="button" className="text-btn" onClick={() => onContinue(resumable)}>
-          繼續未完對局
+          {t("continueOpen")}
         </button>
       )}
       {matches.length > 0 && (
         <ol className="match-list">
           {matches.slice(0, 6).map((match) => (
             <li key={match.id}>
-              {match.humanName} · {match.playerCount} 人 · {statusLabel(match.status)}
-              {match.verified ? " · 已驗證" : ""}
-              {match.participants[0]?.scores ? ` · ${match.participants[0].scores.total} 分` : ""}
+              {t("matchLine", {
+                name: match.humanName,
+                count: match.playerCount,
+                status: statusLabel(match.status, t),
+              })}
+              {match.verified ? t("verifiedSuffix") : ""}
+              {match.participants[0]?.scores
+                ? t("scoreSuffix", { score: match.participants[0].scores.total })
+                : ""}
             </li>
           ))}
         </ol>
@@ -63,8 +77,11 @@ export function StatsPanel({
   );
 }
 
-function statusLabel(status: MatchSummary["status"]): string {
-  if (status === "playing") return "進行中";
-  if (status === "finished") return "已結束";
-  return "已放棄";
+function statusLabel(
+  status: MatchSummary["status"],
+  t: (key: string) => string,
+): string {
+  if (status === "playing") return t("statusPlaying");
+  if (status === "finished") return t("statusFinished");
+  return t("statusAbandoned");
 }

@@ -1,4 +1,5 @@
 import { useRef, type KeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 export const PLAYER_BOARD_PANEL_ID = "player-board-panel";
 
@@ -43,6 +44,7 @@ export function PlayerSeats({
   governorIndex: number;
   onSelect: (playerIndex: number) => void;
 }) {
+  const { t } = useTranslation("game");
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   function selectDisplaySeat(displayIndex: number) {
@@ -60,7 +62,7 @@ export function PlayerSeats({
   }
 
   return (
-    <div className="player-seats" role="tablist" aria-label="玩家座位">
+    <div className="player-seats" role="tablist" aria-label={t("seatAria")}>
       {seats.map((seat, displayIndex) => {
         const { player, playerIndex } = seat;
         const selected = playerIndex === selectedIndex;
@@ -81,13 +83,13 @@ export function PlayerSeats({
             onClick={() => selectDisplaySeat(displayIndex)}
             onKeyDown={(event) => onTabKeyDown(event, displayIndex)}
           >
-            <span className="seat-number">座位 {playerIndex + 1}</span>
+            <span className="seat-number">{t("seatNumber", { n: playerIndex + 1 })}</span>
             <strong>
               {player.name}
-              {player.isHuman ? "（你）" : ""}
+              {player.isHuman ? t("youSuffix") : ""}
             </strong>
-            {playerIndex === governorIndex && <span className="seat-status">總督</span>}
-            {acting && <span className="seat-status">行動中</span>}
+            {playerIndex === governorIndex && <span className="seat-status">{t("governor")}</span>}
+            {acting && <span className="seat-status">{t("acting")}</span>}
           </button>
         );
       })}

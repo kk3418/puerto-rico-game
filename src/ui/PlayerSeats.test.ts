@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import i18n, { i18nReady } from "../i18n";
 import {
   PLAYER_BOARD_PANEL_ID,
   PlayerSeats,
@@ -26,6 +27,11 @@ describe("seatTabOrder", () => {
     expect(clockwiseFrom(2, 4)).toEqual([3, 0, 1]);
     expect(seatTabOrder(2, 4)).toEqual([2, 3, 0, 1]);
   });
+});
+
+beforeAll(async () => {
+  await i18nReady;
+  await i18n.changeLanguage("zh-Hant");
 });
 
 describe("PlayerSeats", () => {

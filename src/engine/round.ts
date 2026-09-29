@@ -13,7 +13,7 @@ export function completeRole(state: GameState): void {
   state.chooserIndex = (state.chooserIndex + 1) % state.players.length;
   state.phase = { type: "chooseRole" };
   const chooser = state.players[state.chooserIndex]!;
-  pushLog(state, `${chooser.name}選擇角色。`);
+  pushLog(state, "chooseRolePrompt", { player: chooser.name });
 }
 
 function endGovernorRound(state: GameState): void {
@@ -31,7 +31,7 @@ function endGovernorRound(state: GameState): void {
   state.round += 1;
   state.phase = { type: "chooseRole" };
   const gov = state.players[state.governorIndex]!;
-  pushLog(state, `第 ${state.round} 輪。總督是${gov.name}。`);
+  pushLog(state, "newRound", { round: state.round, governor: gov.name });
 }
 
 export function finishGame(state: GameState): void {
@@ -39,5 +39,9 @@ export function finishGame(state: GameState): void {
   state.phase = { type: "gameOver" };
   state.scores = scoreGame(state);
   const winner = state.scores[0];
-  pushLog(state, `遊戲結束。${winner ? `${winner.name}以 ${winner.total} 分勝出。` : ""}`);
+  if (winner) {
+    pushLog(state, "gameOver", { player: winner.name, score: winner.total });
+  } else {
+    pushLog(state, "gameOverNoWinner");
+  }
 }

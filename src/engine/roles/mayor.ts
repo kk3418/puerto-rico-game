@@ -12,7 +12,7 @@ export function beginMayor(state: GameState, ownerIndex: number): void {
   const owner = state.players[ownerIndex]!;
   const extra = takeColonists(state, 1);
   owner.sanJuan += extra;
-  if (extra) pushLog(state, `${owner.name}（市長特權）多拿 1 名殖民者。`);
+  if (extra) pushLog(state, "mayorPrivilege", { player: owner.name });
 
   let remaining = state.colonistShip;
   let idx = ownerIndex;
@@ -136,7 +136,7 @@ function refillColonistShip(state: GameState): void {
   const got = takeColonists(state, need);
   state.colonistShip = got;
   if (got < need) {
-    triggerEnd(state, "殖民者供應耗盡，無法補滿殖民船");
+    triggerEnd(state, "colonistSupplyEmpty");
   }
-  pushLog(state, `殖民船補了 ${got} 名殖民者。`);
+  pushLog(state, "colonistShipRefill", { count: got });
 }

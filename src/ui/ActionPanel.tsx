@@ -1,11 +1,15 @@
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import type { Action } from "../engine";
-import { getBuilding } from "../engine";
-import { GOOD_ZH, ROLE_ZH } from "./labels";
+import i18n from "../i18n";
+import { buildingName, goodName, roleName } from "./labels";
 import type { Role } from "../engine/types";
 import { GameIcon } from "./icons";
 import { Tooltip } from "./Tooltip";
 
-export const MAYOR_CONFIRM_BLOCKED = "尚有殖民者未安置，請先在自己的玩家板上安置完畢。";
+export function mayorConfirmBlocked(): string {
+  return i18n.t("mayorBlocked", { ns: "game" });
+}
 
 export function ActionPanel({
   legal,
@@ -24,14 +28,13 @@ export function ActionPanel({
   roleOwnerName?: string | null;
   phaseType?: string;
 }) {
+  const { t } = useTranslation("game");
   const leftover = legal.filter((a) => !isBoardMapped(a) && a.type !== "mayorDone");
   const mayorDone = legal.find((a) => a.type === "mayorDone");
   const mayorTurn =
     phaseType === "mayorAssign" ||
-    legal.some(
-      (a) => a.type === "mayorPlace" || a.type === "mayorRemove" || a.type === "mayorDone",
-    );
-  const mayorBlocked = mayorTurn && !busy && !mayorDone ? MAYOR_CONFIRM_BLOCKED : null;
+    legal.some((a) => a.type === "mayorPlace" || a.type === "mayorRemove" || a.type === "mayorDone");
+  const mayorBlocked = mayorTurn && !busy && !mayorDone ? t("mayorBlocked") : null;
   const confirmDisabled = busy || !mayorDone;
   const confirmButton = (
     <button
@@ -39,9 +42,9 @@ export function ActionPanel({
       className="act-confirm"
       disabled={confirmDisabled}
       onClick={() => mayorDone && onAct(mayorDone)}
-      aria-label={mayorBlocked ? `確定：${mayorBlocked}` : "確定"}
+      aria-label={mayorBlocked ? t("confirmAriaBlocked", { reason: mayorBlocked }) : t("confirm")}
     >
-      確定
+      {t("confirm")}
     </button>
   );
   return (
@@ -49,19 +52,19 @@ export function ActionPanel({
       {activeRole && (
         <p className="action-role">
           <GameIcon kind={activeRole} size={22} />
-          <strong>{ROLE_ZH[activeRole]}</strong>
-          {roleOwnerName && <span className="action-role-owner">{roleOwnerName} 選</span>}
+          <strong>{roleName(activeRole)}</strong>
+          {roleOwnerName && <span className="action-role-owner">{t("roleChosenBy", { name: roleOwnerName })}</span>}
         </p>
       )}
       <h2>
         {prompt}
-        {legal.length > 0 && <span className="legal-count"> · {legal.length} 個選擇</span>}
+        {legal.length > 0 && <span className="legal-count">{t("choiceCount", { count: legal.length })}</span>}
       </h2>
-      {busy && <p className="thinking">對手行動中…</p>}
+      {busy && <p className="thinking">{t("opponentActing")}</p>}
       <div className="act-list">
         {leftover.map((action, i) => (
           <button key={i} disabled={busy} onClick={() => onAct(action)}>
-            {describe(action)}
+            {describe(action, t)}
           </button>
         ))}
         {mayorTurn &&
@@ -89,30 +92,30 @@ function isBoardMapped(action: Action): boolean {
   return false;
 }
 
-function describe(action: Action): string {
+function describe(action: Action, t: TFunction): string {
   switch (action.type) {
     case "chooseRole":
-      return ROLE_ZH[action.roleId.split("-")[0] as Role] ?? action.roleId;
+      return roleName(action.roleId.split("-")[0] as Role) || action.roleId;
     case "settlerHacienda":
-      return action.take ? "莊園抽地" : "不用莊園";
+      return action.take ? t("haciendaDraw") : t("skipHacienda");
     case "settlerTake":
-      return "不拿種植園";
+      return t("skipPlantation");
     case "mayorPlace":
-      return "放到聖胡安";
+      return t("toSanJuan");
     case "mayorDone":
-      return "確定";
+      return t("confirm");
     case "builderBuild":
-      return action.buildingId ? `建造${getBuilding(action.buildingId).nameZh}` : "不建造";
+      return action.buildingId ? t("buildBuilding", { building: buildingName(action.buildingId) }) : t("skipBuild");
     case "craftsmanExtra":
-      return action.good ? `多拿${GOOD_ZH[action.good]}` : "不多拿";
+      return action.good ? t("takeExtraGood", { good: goodName(action.good) }) : t("skipExtra");
     case "traderSell":
-      return action.good ? `賣${GOOD_ZH[action.good]}` : "不賣";
+      return action.good ? t("sellGood", { good: goodName(action.good) }) : t("skipSell");
     case "captainPass":
-      return "不裝船";
+      return t("skipShip");
     case "captainStore": {
-      const types = action.keepTypes.map((g) => GOOD_ZH[g]).join("、") || "無整類";
-      const extra = action.extra ? `＋1 ${GOOD_ZH[action.extra]}` : "";
-      return `保留${types}${extra}`;
+      const types = action.keepTypes.map((g) => goodName(g)).join(t("listJoin")) || t("keepNone");
+      const extra = action.extra ? t("keepExtra", { good: goodName(action.extra) }) : "";
+      return t("keepGoods", { types, extra });
     }
     default:
       return action.type;

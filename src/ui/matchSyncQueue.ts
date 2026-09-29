@@ -1,10 +1,13 @@
 import { ApiError } from "../api/client";
 import type { MatchEventInput } from "../api/types";
+import { formatApiError } from "../api/errorMessage";
+import i18n from "../i18n";
+
+export type MatchSyncPostInit = { keepalive?: boolean };
 
 export type MatchSyncQueue = {
   enqueue: (event: MatchEventInput) => void;
-  flush: () => Promise<void>;
-  abort: () => void;
+  flush: (init?: MatchSyncPostInit) => Promise<void>;
 };
 
 function isRetriableSyncError(err: unknown): boolean {
@@ -15,11 +18,14 @@ function isRetriableSyncError(err: unknown): boolean {
 }
 
 function toError(err: unknown, fallback: string): Error {
-  return err instanceof Error ? err : new Error(fallback);
+  if (err instanceof Error) {
+    return new Error(formatApiError(err, fallback));
+  }
+  return new Error(fallback);
 }
 
 export function createMatchSyncQueue(options: {
-  post: (events: MatchEventInput[]) => Promise<void>;
+  post: (events: MatchEventInput[], init?: MatchSyncPostInit) => Promise<void>;
   debounceMs?: number;
   maxAttempts?: number;
   retryDelayMs?: (attempt: number) => number;
@@ -38,11 +44,11 @@ export function createMatchSyncQueue(options: {
 
   let buffer: MatchEventInput[] = [];
   let inFlight = 0;
+  let inFlightBatch: MatchEventInput[] | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let chain = Promise.resolve();
+  let tail: Promise<void> = Promise.resolve();
+  let queuedFlushes = 0;
   let fatalError: Error | null = null;
-  let aborted = false;
-  let resumeSleep: (() => void) | undefined;
 
   function notify() {
     options.onPending?.(buffer.length + inFlight);
@@ -57,87 +63,56 @@ export function createMatchSyncQueue(options: {
 
   function wait(ms: number): Promise<void> {
     return new Promise((resolve) => {
-      resumeSleep = resolve;
-      void sleep(ms).then(() => {
-        if (resumeSleep === resolve) resumeSleep = undefined;
-        resolve();
-      });
+      void sleep(ms).then(resolve);
     });
   }
 
-  function stopSleep() {
-    resumeSleep?.();
-    resumeSleep = undefined;
-  }
-
-  function settleAbort(): void {
-    buffer = [];
-    inFlight = 0;
-    notify();
-  }
-
   function latchFatal(err: unknown): Error {
-    const error = toError(err, "事件同步失敗");
+    const error = toError(err, i18n.t("eventSyncFailed"));
     fatalError = error;
     buffer = [];
     inFlight = 0;
+    inFlightBatch = null;
     clearDebounce();
     notify();
     options.onError?.(error.message);
     return error;
   }
 
-  async function sendLoop() {
-    if (aborted) return;
+  async function sendLoop(init?: MatchSyncPostInit) {
     if (fatalError) throw fatalError;
     clearDebounce();
     while (buffer.length > 0) {
-      if (aborted) {
-        settleAbort();
-        return;
-      }
       if (fatalError) throw fatalError;
       const batch = buffer;
       buffer = [];
+      inFlightBatch = batch;
       inFlight = batch.length;
       notify();
       let lastError: unknown;
       let sent = false;
       const attempts = Math.max(1, maxAttempts);
       for (let attempt = 0; attempt < attempts; attempt++) {
-        if (aborted) {
-          settleAbort();
-          return;
-        }
         try {
-          await options.post(batch);
-          if (aborted) {
-            settleAbort();
-            return;
-          }
+          await options.post(batch, init);
           sent = true;
           options.onError?.(null);
           break;
         } catch (err) {
-          if (aborted) {
-            settleAbort();
-            return;
-          }
           lastError = err;
           if (!isRetriableSyncError(err) || attempt >= attempts - 1) break;
           await wait(retryDelay(attempt));
         }
       }
-      inFlight = 0;
-      if (aborted) {
-        settleAbort();
-        return;
+      if (inFlightBatch === batch) {
+        inFlightBatch = null;
       }
+      inFlight = 0;
       if (!sent) {
         if (isRetriableSyncError(lastError)) {
           buffer = [...batch, ...buffer];
           notify();
-          const error = toError(lastError, "事件同步失敗");
+          const error = toError(lastError, i18n.t("eventSyncFailed"));
           options.onError?.(error.message);
           throw error;
         }
@@ -147,19 +122,47 @@ export function createMatchSyncQueue(options: {
     }
   }
 
-  function flush() {
-    if (aborted) return Promise.resolve();
-    if (fatalError) return Promise.reject(fatalError);
-    const next = chain.then(sendLoop, sendLoop);
-    chain = next.then(
+  function flushKeepalive(): Promise<void> {
+    clearDebounce();
+    const batch = [...(inFlightBatch ?? []), ...buffer];
+    buffer = [];
+    notify();
+    if (batch.length === 0) return Promise.resolve();
+    // Start the keepalive fetch in this turn. Do not wait for a non-keepalive in-flight
+    // post that the browser may abort on unload; duplicate seqs are idempotent on the server.
+    const job = options.post(batch, { keepalive: true }).then(() => {
+      options.onError?.(null);
+    });
+    queuedFlushes += 1;
+    const settled = job.finally(() => {
+      queuedFlushes -= 1;
+    });
+    tail = Promise.all([tail, settled]).then(
       () => undefined,
       () => undefined,
     );
-    return next;
+    return job;
+  }
+
+  function flush(init?: MatchSyncPostInit) {
+    if (fatalError) return Promise.reject(fatalError);
+    if (init?.keepalive) return flushKeepalive();
+
+    queuedFlushes += 1;
+    // Run immediately when idle so pagehide can start a keepalive fetch in the same turn.
+    const job = queuedFlushes === 1 ? sendLoop(init) : tail.then(() => sendLoop(init), () => sendLoop(init));
+    const settled = job.finally(() => {
+      queuedFlushes -= 1;
+    });
+    tail = settled.then(
+      () => undefined,
+      () => undefined,
+    );
+    return job;
   }
 
   function enqueue(event: MatchEventInput) {
-    if (aborted || fatalError) return;
+    if (fatalError) return;
     buffer.push(event);
     notify();
     clearDebounce();
@@ -169,12 +172,5 @@ export function createMatchSyncQueue(options: {
     }, debounceMs);
   }
 
-  function abort() {
-    aborted = true;
-    clearDebounce();
-    stopSleep();
-    settleAbort();
-  }
-
-  return { enqueue, flush, abort };
+  return { enqueue, flush };
 }

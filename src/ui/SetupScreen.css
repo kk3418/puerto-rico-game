@@ -63,6 +63,36 @@
   max-width: 36rem;
 }
 
+.auth-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.2rem;
+}
+
+.language-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+
+.language-select span {
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sand);
+  padding: 0.45rem 0 0 0.65rem;
+}
+
+.language-select select {
+  min-width: 6rem;
+  border: 0;
+  background: rgba(11, 47, 54, 0.45);
+  color: var(--sand-light);
+  font-weight: 700;
+  padding: 0.45rem 0.65rem;
+}
+
 .auth-status {
   display: flex;
   align-items: center;
