@@ -8,6 +8,7 @@ import { SESSION_COOKIE } from "../session";
 import { findOrCreateUser, publicUser } from "./accounts";
 import { exchangeGithubCode, createGithubOAuthState, githubAuthorizeUrl, githubConfigured } from "./github";
 import { verifyGoogleIdToken } from "./google";
+import { nicknameSchema } from "../validation";
 
 function providerFlags() {
   return {
@@ -15,12 +16,6 @@ function providerFlags() {
     github: githubConfigured(),
   };
 }
-
-const nicknameSchema = z
-  .string()
-  .trim()
-  .min(1, "請輸入暱稱")
-  .max(24, "暱稱太長");
 
 export const authRouter = Router();
 

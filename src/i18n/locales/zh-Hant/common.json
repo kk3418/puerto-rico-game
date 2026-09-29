@@ -38,6 +38,9 @@
   "notYourTurn": "現在不是你的行動",
   "errors": {
     "INVALID_REQUEST": "請求無效",
+    "INVALID_REQUEST_DETAIL": "請求無效：{{detail}}",
+    "NICKNAME_REQUIRED": "請輸入暱稱",
+    "NICKNAME_TOO_LONG": "暱稱太長",
     "SERVER_ERROR": "伺服器錯誤",
     "AUTH_REQUIRED": "需要登入或訪客工作階段",
     "LOGIN_REQUIRED": "請先登入",
@@ -70,6 +73,11 @@
     "GITHUB_PROFILE_FAILED": "無法讀取 GitHub 資料",
     "GOOGLE_NOT_CONFIGURED": "尚未設定 Google 登入",
     "GOOGLE_AUTH_FAILED": "Google 身分驗證失敗",
-    "LOGOUT_FAILED": "無法登出"
+    "LOGOUT_FAILED": "無法登出",
+    "details": {
+      "ILLEGAL_ACTION": "非法行動",
+      "UNKNOWN_ROLE": "未知角色",
+      "APPLY_FAILED": "無法套用"
+    }
   }
 }

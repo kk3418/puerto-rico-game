@@ -1,3 +1,4 @@
+import { EngineError } from "./errors";
 import { beginChosenRole } from "./flow";
 import { actorIndex, actionsEqual, cloneState, isLegalAction, pushLog } from "./helpers";
 import { applyBuilder, legalBuilder } from "./roles/builder";
@@ -42,13 +43,13 @@ export function applyAction(state: GameState, action: Action): GameState {
   const next = cloneState(state);
   const legal = getLegalActions(next);
   if (!isLegalAction(next, action, legal)) {
-    throw new Error(`Illegal action: ${JSON.stringify(action)}`);
+    throw new EngineError("ILLEGAL_ACTION", `Illegal action: ${JSON.stringify(action)}`);
   }
 
   switch (action.type) {
     case "chooseRole": {
       const slot = next.roles.find((r) => r.id === action.roleId);
-      if (!slot) throw new Error("Unknown role");
+      if (!slot) throw new EngineError("UNKNOWN_ROLE", "Unknown role");
       const chooser = next.players[next.chooserIndex]!;
       chooser.doubloons += slot.doubloons;
       const bonus = slot.doubloons;

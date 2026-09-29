@@ -7,6 +7,7 @@ import { env } from "./env";
 import { HttpError } from "./errors";
 import { matchesRouter, meRouter } from "./matches/routes";
 import { sessionMiddleware } from "./session";
+import { ZOD_MESSAGE_CODES } from "./validation";
 
 export function createApp() {
   const app = express();
@@ -30,7 +31,16 @@ export function createApp() {
   const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     if (err instanceof ZodError) {
       const first = err.issues[0];
-      res.status(400).json({ error: first?.message ?? "請求無效", code: "INVALID_REQUEST" });
+      const message = first?.message ?? "請求無效";
+      if (ZOD_MESSAGE_CODES.has(message)) {
+        res.status(400).json({ error: message, code: message });
+        return;
+      }
+      res.status(400).json({
+        error: message,
+        code: "INVALID_REQUEST",
+        params: { detail: message },
+      });
       return;
     }
     if (err instanceof HttpError) {

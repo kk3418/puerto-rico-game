@@ -16,6 +16,7 @@ export { GOODS, ROLES } from "./types";
 export { BUILDINGS, BUILDING_IDS, getBuilding } from "./buildings";
 export { createInitialState, colonistCount, vpChipCount, shipCapacities, startingDoubloons } from "./setup";
 export { applyAction, getLegalActions, getActorIndex, actionsEqual } from "./reduce";
+export { EngineError, applyFailureDetail, type EngineErrorCode } from "./errors";
 export {
   actorIndex,
   chosenRoleFor,

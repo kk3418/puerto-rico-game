@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { Router } from "express";
 import { z } from "zod";
-import { actionsEqual, applyAction, type Action } from "../../../src/engine";
+import { actionsEqual, applyAction, applyFailureDetail, type Action } from "../../../src/engine";
+import { nicknameSchema } from "../validation";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, requireUser } from "../identity";
@@ -14,7 +15,6 @@ import { replayCache } from "./replayCache";
 import { classifySeq } from "./seq";
 import { refreshUserStats } from "./stats";
 
-const nicknameSchema = z.string().trim().min(1).max(24);
 const playerCountSchema = z.union([z.literal(3), z.literal(4), z.literal(5)]);
 const difficultySchema = z.enum(["balanced", "aggressive"]);
 
@@ -340,8 +340,11 @@ matchesRouter.post("/:id/events", async (req, res) => {
       try {
         state = applyAction(state, event.action);
       } catch (err) {
-        const message = err instanceof Error ? err.message : "無法套用";
-        throw new HttpError(400, `事件 ${event.seq} 無法套用：${message}`, "EVENT_APPLY_FAILED", { seq: event.seq, detail: message });
+        const detail = applyFailureDetail(err);
+        throw new HttpError(400, `事件 ${event.seq} 無法套用：${detail}`, "EVENT_APPLY_FAILED", {
+          seq: event.seq,
+          detail,
+        });
       }
       const actor = match.participants.find((p) => p.seatIndex === meta.actorSeatIndex);
       toCreate.push({

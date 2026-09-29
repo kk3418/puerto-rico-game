@@ -80,6 +80,32 @@ describe("createMatchSyncQueue", () => {
     expect(flags).toEqual([undefined, true]);
   });
 
+  it("keepalive flush re-posts the in-flight batch without waiting for the non-keepalive post", async () => {
+    const gate = deferred<void>();
+    const posts: Array<{ seqs: number[]; keepalive?: boolean }> = [];
+    const queue = createMatchSyncQueue({
+      debounceMs: 10_000,
+      async post(events, init) {
+        posts.push({ seqs: events.map((item) => item.seq), keepalive: init?.keepalive });
+        if (!init?.keepalive) await gate.promise;
+      },
+    });
+    queue.enqueue(event(1));
+    const regular = queue.flush();
+    await Promise.resolve();
+    expect(posts).toEqual([{ seqs: [1], keepalive: undefined }]);
+
+    queue.enqueue(event(2));
+    const keepalive = queue.flush({ keepalive: true });
+    expect(posts).toEqual([
+      { seqs: [1], keepalive: undefined },
+      { seqs: [1, 2], keepalive: true },
+    ]);
+
+    gate.resolve();
+    await Promise.all([regular, keepalive]);
+  });
+
   it("does not return from flush until the in-flight batch has been posted", async () => {
     const gate = deferred<void>();
     let finished = false;
@@ -129,19 +155,19 @@ describe("createMatchSyncQueue", () => {
       async post(events) {
         attempts += 1;
         received.push(events.map((item) => item.seq));
-        throw new ApiError(400, "事件 6 無法套用：Illegal action", "EVENT_APPLY_FAILED", {
+        throw new ApiError(400, "事件 6 無法套用：ILLEGAL_ACTION", "EVENT_APPLY_FAILED", {
           seq: 6,
-          detail: "Illegal action",
+          detail: "ILLEGAL_ACTION",
         });
       },
     });
     queue.enqueue(event(6));
-    await expect(queue.flush()).rejects.toThrow(/Event 6|事件 6/);
+    await expect(queue.flush()).rejects.toThrow(/illegal action|非法行動/);
     queue.enqueue(event(7));
-    await expect(queue.flush()).rejects.toThrow(/Event 6|事件 6/);
+    await expect(queue.flush()).rejects.toThrow(/illegal action|非法行動/);
     expect(attempts).toBe(1);
     expect(received).toEqual([[6]]);
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatch(/Event 6|事件 6/);
+    expect(errors[0]).toMatch(/illegal action|非法行動/);
   });
 });

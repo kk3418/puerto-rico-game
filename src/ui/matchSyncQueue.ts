@@ -44,6 +44,7 @@ export function createMatchSyncQueue(options: {
 
   let buffer: MatchEventInput[] = [];
   let inFlight = 0;
+  let inFlightBatch: MatchEventInput[] | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let tail: Promise<void> = Promise.resolve();
   let queuedFlushes = 0;
@@ -71,6 +72,7 @@ export function createMatchSyncQueue(options: {
     fatalError = error;
     buffer = [];
     inFlight = 0;
+    inFlightBatch = null;
     clearDebounce();
     notify();
     options.onError?.(error.message);
@@ -84,6 +86,7 @@ export function createMatchSyncQueue(options: {
       if (fatalError) throw fatalError;
       const batch = buffer;
       buffer = [];
+      inFlightBatch = batch;
       inFlight = batch.length;
       notify();
       let lastError: unknown;
@@ -101,6 +104,9 @@ export function createMatchSyncQueue(options: {
           await wait(retryDelay(attempt));
         }
       }
+      if (inFlightBatch === batch) {
+        inFlightBatch = null;
+      }
       inFlight = 0;
       if (!sent) {
         if (isRetriableSyncError(lastError)) {
@@ -116,8 +122,32 @@ export function createMatchSyncQueue(options: {
     }
   }
 
+  function flushKeepalive(): Promise<void> {
+    clearDebounce();
+    const batch = [...(inFlightBatch ?? []), ...buffer];
+    buffer = [];
+    notify();
+    if (batch.length === 0) return Promise.resolve();
+    // Start the keepalive fetch in this turn. Do not wait for a non-keepalive in-flight
+    // post that the browser may abort on unload; duplicate seqs are idempotent on the server.
+    const job = options.post(batch, { keepalive: true }).then(() => {
+      options.onError?.(null);
+    });
+    queuedFlushes += 1;
+    const settled = job.finally(() => {
+      queuedFlushes -= 1;
+    });
+    tail = Promise.all([tail, settled]).then(
+      () => undefined,
+      () => undefined,
+    );
+    return job;
+  }
+
   function flush(init?: MatchSyncPostInit) {
     if (fatalError) return Promise.reject(fatalError);
+    if (init?.keepalive) return flushKeepalive();
+
     queuedFlushes += 1;
     // Run immediately when idle so pagehide can start a keepalive fetch in the same turn.
     const job = queuedFlushes === 1 ? sendLoop(init) : tail.then(() => sendLoop(init), () => sendLoop(init));

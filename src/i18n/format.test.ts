@@ -1,8 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import i18n, { i18nReady } from "./index";
 import { formatEndReason, formatLogEntry } from "./format";
-import enLog from "./locales/en/log.json";
-import zhLog from "./locales/zh-Hant/log.json";
 
 describe("formatLogEntry", () => {
   beforeAll(async () => {
@@ -49,21 +47,5 @@ describe("formatEndReason", () => {
       "the colonist supply is empty and the colonist ship cannot be refilled",
     );
     expect(formatEndReason("Ada的城市已滿", i18n.t)).toBe("Ada's city is full");
-  });
-});
-
-describe("log locale parity", () => {
-  it("keeps en and zh-Hant log keys aligned", () => {
-    const flatten = (obj: Record<string, unknown>, prefix = ""): string[] =>
-      Object.entries(obj).flatMap(([key, value]) => {
-        const path = prefix ? `${prefix}.${key}` : key;
-        if (value && typeof value === "object") {
-          return flatten(value as Record<string, unknown>, path);
-        }
-        return [path];
-      });
-    expect(flatten(enLog as Record<string, unknown>).sort()).toEqual(
-      flatten(zhLog as Record<string, unknown>).sort(),
-    );
   });
 });

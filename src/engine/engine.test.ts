@@ -3,9 +3,11 @@ import { HeuristicAgent, HEURISTIC_TABLE_PAUSE_MS } from "../agents/heuristic";
 import { dispatchAction } from "../agents/turnLoop";
 import {
   applyAction,
+  applyFailureDetail,
   assertSerializable,
   cloneViaJson,
   createInitialState,
+  EngineError,
   getActorIndex,
   getLegalActions,
   occupiedBuilding,
@@ -47,6 +49,18 @@ describe("setup", () => {
     expect(() =>
       createInitialState({ playerCount: 3, difficulty: "balanced", seed: 1, humanName: "  " }),
     ).toThrow(/humanName/);
+  });
+
+  it("throws EngineError codes for illegal actions", () => {
+    const s = setup();
+    try {
+      play(s, { type: "builderBuild", buildingId: "wharf" });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(EngineError);
+      expect((err as EngineError).code).toBe("ILLEGAL_ACTION");
+      expect(applyFailureDetail(err)).toBe("ILLEGAL_ACTION");
+    }
   });
   it("sets 3/4/5 player supplies, money, and ships", () => {
     for (const n of [3, 4, 5] as const) {
