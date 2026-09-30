@@ -90,18 +90,28 @@ export function applyNextActions(state: GameState, actions: Action[]): LiveRepla
   }
 }
 
+export function replaySeatNames(match: {
+  mode: string;
+  participants: Array<{ seatIndex: number; nickname: string }>;
+}): string[] | undefined {
+  if (match.mode !== "online") return undefined;
+  return [...match.participants].sort((a, b) => a.seatIndex - b.seatIndex).map((p) => p.nickname);
+}
+
 export function replayToState(input: {
   playerCount: PlayerCount;
   difficulty: Difficulty;
   seed: number;
   humanName: string;
   actions: Action[];
+  seatNames?: string[];
 }): LiveReplayOk | LiveReplayFail {
   const start = createInitialState({
     playerCount: input.playerCount,
     difficulty: input.difficulty,
     seed: input.seed,
     humanName: input.humanName,
+    seatNames: input.seatNames,
   });
   return applyNextActions(start, input.actions);
 }
@@ -114,6 +124,7 @@ export function replayStoredActions(
     seed: number;
     humanName: string;
     actions: Action[];
+    seatNames?: string[];
   },
   cache: ReplayCache = replayCache,
 ): LiveReplayOk | LiveReplayFail {
@@ -131,6 +142,7 @@ export function replayMatch(input: {
   seed: number;
   humanName: string;
   actions: Action[];
+  seatNames?: string[];
 }, cache: ReplayCache = replayCache): ReplayResult {
   if (input.actions.length === 0) {
     return { ok: false, reason: "empty", message: "沒有可重放的事件" };

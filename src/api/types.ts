@@ -1,4 +1,4 @@
-import type { Difficulty, GameState, PlayerCount, ScoreBreakdown } from "../engine";
+import type { Action, Difficulty, GameState, PlayerCount, ScoreBreakdown } from "../engine";
 
 export type AuthUser = {
   id: string;
@@ -44,7 +44,7 @@ export type MatchSummary = {
   endReason: string | null;
   startedAt: string;
   endedAt: string | null;
-  status: "playing" | "finished" | "abandoned";
+  status: "lobby" | "playing" | "finished" | "abandoned";
   verified: boolean;
   eventCount: number;
   hasSave: boolean;
@@ -100,4 +100,34 @@ export type CreateMatchInput = {
   playerCount: PlayerCount;
   difficulty: Difficulty;
   seed?: number;
+};
+
+export type SaveConsentResult = {
+  matchId: string;
+  seatIndex: number;
+  consented: number;
+  required: number;
+  complete: boolean;
+};
+
+/** Online socket payloads. `state` is redacted server-side (no deck contents or rng). */
+export type OnlineStatePayload = {
+  matchId: string;
+  state: GameState;
+  legalActions: Action[];
+  eventCount: number;
+  seatIndex?: number;
+};
+
+export type OnlineOverPayload = {
+  matchId: string;
+  status: string;
+  scores?: ScoreBreakdown[];
+  endReason?: string | null;
+};
+
+export type OnlineErrorPayload = {
+  error: string;
+  code?: string;
+  params?: Record<string, string | number>;
 };

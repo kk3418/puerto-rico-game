@@ -6,6 +6,7 @@ import { authRouter } from "./auth/routes";
 import { env } from "./env";
 import { HttpError } from "./errors";
 import { matchesRouter, meRouter } from "./matches/routes";
+import { roomsRouter } from "./rooms/routes";
 import { sessionMiddleware } from "./session";
 import { ZOD_MESSAGE_CODES } from "./validation";
 
@@ -27,6 +28,7 @@ export function createApp() {
   app.use("/api/auth", authRouter);
   app.use("/api/matches", matchesRouter);
   app.use("/api/me", meRouter);
+  app.use("/api/rooms", roomsRouter);
 
   const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     if (err instanceof ZodError) {

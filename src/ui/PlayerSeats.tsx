@@ -36,12 +36,15 @@ export function PlayerSeats({
   selectedIndex,
   turnSeat,
   governorIndex,
+  youIndex,
   onSelect,
 }: {
   seats: Array<{ player: { id: string; name: string; isHuman: boolean }; playerIndex: number }>;
   selectedIndex: number;
   turnSeat: number | null;
   governorIndex: number;
+  /** Online tables mark every seat human; pass the viewer's seat to place the "you" suffix. */
+  youIndex?: number;
   onSelect: (playerIndex: number) => void;
 }) {
   const { t } = useTranslation("game");
@@ -67,6 +70,7 @@ export function PlayerSeats({
         const { player, playerIndex } = seat;
         const selected = playerIndex === selectedIndex;
         const acting = playerIndex === turnSeat;
+        const isYou = youIndex === undefined ? player.isHuman : playerIndex === youIndex;
         return (
           <button
             key={player.id}
@@ -86,7 +90,7 @@ export function PlayerSeats({
             <span className="seat-number">{t("seatNumber", { n: playerIndex + 1 })}</span>
             <strong>
               {player.name}
-              {player.isHuman ? t("youSuffix") : ""}
+              {isYou ? t("youSuffix") : ""}
             </strong>
             {playerIndex === governorIndex && <span className="seat-status">{t("governor")}</span>}
             {acting && <span className="seat-status">{t("acting")}</span>}

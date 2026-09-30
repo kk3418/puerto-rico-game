@@ -166,6 +166,40 @@
   font-size: 1.15rem;
 }
 
+.online-panel {
+  margin-top: 2.5rem;
+  max-width: 36rem;
+}
+
+.online-panel h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.online-panel .setup-cta {
+  margin-top: 0.8rem;
+}
+
+.room-list {
+  margin-top: 1.2rem;
+}
+
+.room-list-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.room-list-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.room-list > p {
+  margin: 0.6rem 0 0;
+  color: var(--foam);
+}
+
 .match-list {
   margin: 0.6rem 0 0;
   padding-left: 1.1rem;

@@ -8,7 +8,7 @@ import {
   scoreGame,
   type Action,
 } from "../../../src/engine";
-import { isAction, applyNextActions, describeActionContext, isSupportedSaveSchema, replayMatch, replayStoredActions, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
+import { isAction, applyNextActions, describeActionContext, isSupportedSaveSchema, replayMatch, replaySeatNames, replayStoredActions, replayToState, SAVE_SCHEMA_VERSION } from "./replay";
 import { createReplayCache } from "./replayCache";
 
 async function recordGame(seed: number): Promise<{ actions: Action[]; scores: ReturnType<typeof scoreGame> }> {
@@ -181,6 +181,75 @@ describe("replayStoredActions", () => {
     expect(full.ok).toBe(true);
     if (!delta.ok || !full.ok) return;
     expect(delta.state).toEqual(full.state);
+  });
+});
+
+describe("seatNames", () => {
+  it("seats every player as a human with the given nicknames", () => {
+    const state = createInitialState({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 1,
+      humanName: "備用",
+      seatNames: ["阿明", "小美", "阿華"],
+    });
+    expect(state.players.map((p) => p.name)).toEqual(["阿明", "小美", "阿華"]);
+    expect(state.players.map((p) => p.isHuman)).toEqual([true, true, true]);
+  });
+
+  it("keeps the solo naming and RNG order when seatNames is absent or mismatched", () => {
+    const solo = createInitialState({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 7,
+      humanName: "你",
+    });
+    expect(solo.players.map((p) => p.name)).toEqual(["你", "AI 1", "AI 2"]);
+    expect(solo.players.map((p) => p.isHuman)).toEqual([true, false, false]);
+
+    const mismatched = createInitialState({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 7,
+      humanName: "你",
+      seatNames: ["只有", "兩位"],
+    });
+    expect(mismatched.players.map((p) => p.name)).toEqual(["你", "AI 1", "AI 2"]);
+
+    const named = createInitialState({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 7,
+      humanName: "你",
+      seatNames: ["甲", "乙", "丙"],
+    });
+    expect(named.plantationDeck).toEqual(solo.plantationDeck);
+    expect(named.governorIndex).toBe(solo.governorIndex);
+  });
+
+  it("replays an online match with participant nicknames", () => {
+    const result = replayToState({
+      playerCount: 3,
+      difficulty: "balanced",
+      seed: 1,
+      humanName: "備用",
+      actions: [],
+      seatNames: ["阿明", "小美", "阿華"],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.players.map((p) => p.name)).toEqual(["阿明", "小美", "阿華"]);
+    expect(result.state.players.every((p) => p.isHuman)).toBe(true);
+  });
+
+  it("replaySeatNames names only online matches, ordered by seatIndex", () => {
+    const participants = [
+      { seatIndex: 2, nickname: "丙" },
+      { seatIndex: 0, nickname: "甲" },
+      { seatIndex: 1, nickname: "乙" },
+    ];
+    expect(replaySeatNames({ mode: "online", participants })).toEqual(["甲", "乙", "丙"]);
+    expect(replaySeatNames({ mode: "solo", participants })).toBeUndefined();
   });
 });
 

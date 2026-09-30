@@ -6,18 +6,22 @@ import {
   createGuest,
   getMe,
   readLastMatchId,
+  readStoredNickname,
   writeLastMatchId,
   writeStoredNickname,
 } from "../api/auth";
 import { ApiError } from "../api/client";
 import { formatApiError } from "../api/errorMessage";
-import { createMatch, getMatchState } from "../api/matches";
+import { createMatch, getMatch, getMatchState } from "../api/matches";
+import { createRoom, joinRoom, listRooms, type RoomSummary } from "../api/rooms";
 import type { AuthMe, MatchSummary } from "../api/types";
 import type { Difficulty, GameState, PlayerCount } from "../engine";
 import { GameScreen } from "./GameScreen";
+import { LobbyScreen, type LobbyRoom } from "./LobbyScreen";
 import { SetupScreen } from "./SetupScreen";
 
 export type PlaySession = {
+  mode: "solo" | "online";
   matchId: string;
   playerCount: PlayerCount;
   difficulty: Difficulty;
@@ -25,7 +29,7 @@ export type PlaySession = {
   nickname: string;
   initialState?: GameState;
   nextSeq: number;
-  playToken: string;
+  playToken?: string;
   nonce: number;
 };
 
@@ -35,6 +39,7 @@ export function App() {
   const [bootError, setBootError] = useState<string | null>(null);
   const [booting, setBooting] = useState(true);
   const [play, setPlay] = useState<PlaySession | null>(null);
+  const [lobby, setLobby] = useState<LobbyRoom | null>(null);
 
   const refreshAuth = useCallback(async () => {
     let me = await getMe();
@@ -54,6 +59,7 @@ export function App() {
     }
     writeLastMatchId(match.id);
     setPlay({
+      mode: "solo",
       matchId: match.id,
       playerCount: match.playerCount,
       difficulty: match.difficulty,
@@ -66,14 +72,60 @@ export function App() {
     });
   }, []);
 
+  const enterOnline = useCallback((matchId: string, playerCount: PlayerCount, nickname: string) => {
+    writeLastMatchId(matchId);
+    setLobby(null);
+    setPlay({
+      mode: "online",
+      matchId,
+      playerCount,
+      difficulty: "balanced",
+      seed: 0,
+      nickname,
+      nextSeq: 1,
+      nonce: Date.now(),
+    });
+  }, []);
+
   const resumeLiveMatch = useCallback(
     async (id: string) => {
       const live = await getMatchState(id);
+      if (live.mode === "online") {
+        enterOnline(live.id, live.playerCount, readStoredNickname());
+        return live;
+      }
       enterMatch(live, live.state);
       return live;
     },
-    [enterMatch],
+    [enterMatch, enterOnline],
   );
+
+  const resumeOnlineLobby = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      const match = await getMatch(id);
+      if (match.mode !== "online" || match.status !== "lobby") return false;
+      const { rooms } = await listRooms().catch(() => ({ rooms: [] }));
+      const item = rooms.find((r) => r.id === match.id);
+      const hostSeatIndex = item?.hostNickname
+        ? (match.participants.find((p) => p.nickname === item.hostNickname)?.seatIndex ?? null)
+        : null;
+      setLobby({
+        id: match.id,
+        joinCode: item?.joinCode ?? null,
+        playerCount: match.playerCount,
+        hostSeatIndex,
+        seats: match.participants.map((p) => ({
+          seatIndex: p.seatIndex,
+          nickname: p.nickname,
+          userId: p.userId,
+          guestId: p.guestId,
+        })),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -89,6 +141,7 @@ export function App() {
         await resumeLiveMatch(id);
       } catch (err) {
         if (err instanceof ApiError) {
+          if (await resumeOnlineLobby(id)) return;
           clearLastMatchId();
         }
       }
@@ -99,7 +152,7 @@ export function App() {
       .finally(() => {
         setBooting(false);
       });
-  }, [refreshAuth, resumeLiveMatch]);
+  }, [refreshAuth, resumeLiveMatch, resumeOnlineLobby]);
 
   async function startNew(playerCount: PlayerCount, difficulty: Difficulty, nickname: string) {
     writeStoredNickname(nickname);
@@ -109,7 +162,44 @@ export function App() {
     enterMatch(match);
   }
 
+  function lobbyFromRoom(room: RoomSummary): LobbyRoom {
+    return {
+      id: room.id,
+      joinCode: room.joinCode,
+      playerCount: room.playerCount,
+      hostSeatIndex: room.hostSeatIndex,
+      seats: room.seats,
+    };
+  }
+
+  async function createOnlineRoom(playerCount: PlayerCount, nickname: string) {
+    writeStoredNickname(nickname);
+    await createGuest(nickname);
+    const room = await createRoom({ nickname, playerCount });
+    writeLastMatchId(room.id);
+    setLobby(lobbyFromRoom(room));
+  }
+
+  async function joinOnlineRoom(nickname: string, target: { joinCode?: string; roomId?: string }) {
+    writeStoredNickname(nickname);
+    await createGuest(nickname);
+    const room = await joinRoom({ nickname, ...target });
+    writeLastMatchId(room.id);
+    if (room.status === "playing") {
+      enterOnline(room.id, room.playerCount, nickname);
+      return;
+    }
+    setLobby(lobbyFromRoom(room));
+  }
+
   async function continueMatch(match: MatchSummary) {
+    if (match.mode === "online") {
+      if (match.status === "playing") {
+        enterOnline(match.id, match.playerCount, readStoredNickname());
+        return;
+      }
+      throw new Error(i18n.t("matchNotFound"));
+    }
     try {
       await resumeLiveMatch(match.id);
     } catch {
@@ -130,39 +220,56 @@ export function App() {
     }
   }
 
+  const startOnlineFromLobby = useCallback(() => {
+    if (!lobby) return;
+    enterOnline(lobby.id, lobby.playerCount, readStoredNickname());
+  }, [lobby, enterOnline]);
+
+  const exitLobby = useCallback(() => {
+    clearLastMatchId();
+    setLobby(null);
+  }, []);
+
   if (booting) {
     return <BootScreen />;
   }
 
-  if (!play) {
+  if (play) {
     return (
-      <SetupScreen
-        auth={auth}
-        authError={authError}
-        bootError={bootError}
-        onAuthChange={setAuth}
-        onStart={(playerCount, difficulty, nickname) => startNew(playerCount, difficulty, nickname)}
-        onContinue={continueMatch}
-        onContinueLast={readLastMatchId() ? continueLast : undefined}
+      <GameScreen
+        key={play.nonce}
+        matchId={play.matchId}
+        playerCount={play.playerCount}
+        difficulty={play.difficulty}
+        seed={play.seed}
+        nickname={play.nickname}
+        initialState={play.initialState}
+        nextSeq={play.nextSeq}
+        playToken={play.playToken}
+        online={play.mode === "online"}
+        onExit={() => {
+          void refreshAuth().catch(() => undefined);
+          setPlay(null);
+        }}
       />
     );
   }
 
+  if (lobby) {
+    return <LobbyScreen room={lobby} auth={auth} onStart={startOnlineFromLobby} onExit={exitLobby} />;
+  }
+
   return (
-    <GameScreen
-      key={play.nonce}
-      matchId={play.matchId}
-      playerCount={play.playerCount}
-      difficulty={play.difficulty}
-      seed={play.seed}
-      nickname={play.nickname}
-      initialState={play.initialState}
-      nextSeq={play.nextSeq}
-      playToken={play.playToken}
-      onExit={() => {
-        void refreshAuth().catch(() => undefined);
-        setPlay(null);
-      }}
+    <SetupScreen
+      auth={auth}
+      authError={authError}
+      bootError={bootError}
+      onAuthChange={setAuth}
+      onStart={(playerCount, difficulty, nickname) => startNew(playerCount, difficulty, nickname)}
+      onContinue={continueMatch}
+      onContinueLast={readLastMatchId() ? continueLast : undefined}
+      onCreateRoom={createOnlineRoom}
+      onJoinRoom={joinOnlineRoom}
     />
   );
 }

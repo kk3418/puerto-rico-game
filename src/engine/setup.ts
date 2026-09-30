@@ -35,13 +35,14 @@ export function createInitialState(options: SetupOptions): GameState {
   const playerCount = options.playerCount;
   const seed = options.seed ?? (Date.now() & 0x7fffffff);
   const starts = startingPlantations(playerCount);
+  const seatNames = options.seatNames?.length === playerCount ? options.seatNames : undefined;
   const players: PlayerState[] = [];
 
   for (let i = 0; i < playerCount; i++) {
-    const isHuman = i === 0;
+    const isHuman = seatNames !== undefined || i === 0;
     players.push({
       id: `p${i}`,
-      name: isHuman ? humanName : `AI ${i}`,
+      name: seatNames?.[i] ?? (isHuman ? humanName : `AI ${i}`),
       isHuman,
       doubloons: startingDoubloons(playerCount),
       vpChips: 0,

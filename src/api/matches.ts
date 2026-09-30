@@ -1,6 +1,6 @@
 import { api } from "./client";
 import type { GameState } from "../engine";
-import type { CreateMatchInput, FinishResult, MatchEventInput, MatchLiveState, MatchSave, MatchSummary, UserStats } from "./types";
+import type { CreateMatchInput, FinishResult, MatchEventInput, MatchLiveState, MatchSave, MatchSummary, SaveConsentResult, UserStats } from "./types";
 
 export function createMatch(input: CreateMatchInput): Promise<MatchSummary> {
   return api<MatchSummary>("/matches", {
@@ -52,6 +52,10 @@ export function putMatchSave(id: string, state: GameState, schemaVersion = "1.0"
 
 export function getMatchSave(id: string): Promise<MatchSave> {
   return api<MatchSave>(`/matches/${id}/save`);
+}
+
+export function saveMatchConsent(id: string): Promise<SaveConsentResult> {
+  return api(`/matches/${id}/save-consent`, { method: "POST" });
 }
 
 export function getMyMatches(): Promise<{ matches: MatchSummary[] }> {

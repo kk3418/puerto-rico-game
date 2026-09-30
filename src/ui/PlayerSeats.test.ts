@@ -59,4 +59,22 @@ describe("PlayerSeats", () => {
       /aria-selected="false"[^>]*id="player-seat-tab-p2"|id="player-seat-tab-p2"[^>]*aria-selected="false"/,
     );
   });
+
+  it("marks only the viewer's seat with the you suffix when youIndex is given", () => {
+    const html = renderToStaticMarkup(
+      createElement(PlayerSeats, {
+        seats: [
+          { player: { id: "p0", name: "安娜", isHuman: true }, playerIndex: 0 },
+          { player: { id: "p1", name: "伯特", isHuman: true }, playerIndex: 1 },
+        ],
+        selectedIndex: 1,
+        turnSeat: null,
+        governorIndex: 0,
+        youIndex: 1,
+        onSelect: () => undefined,
+      }),
+    );
+    expect(html).toContain("伯特（你）");
+    expect(html).not.toContain("安娜（你）");
+  });
 });

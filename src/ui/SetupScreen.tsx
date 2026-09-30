@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { readStoredNickname } from "../api/auth";
 import { formatApiError } from "../api/errorMessage";
+import { listRooms, type RoomListItem } from "../api/rooms";
 import type { AuthMe, MatchSummary } from "../api/types";
 import type { Difficulty, PlayerCount } from "../engine/types";
 import { AuthBar } from "./AuthBar";
@@ -16,6 +17,8 @@ export function SetupScreen({
   onStart,
   onContinue,
   onContinueLast,
+  onCreateRoom,
+  onJoinRoom,
 }: {
   auth: AuthMe | null;
   authError: string | null;
@@ -24,6 +27,8 @@ export function SetupScreen({
   onStart: (playerCount: PlayerCount, difficulty: Difficulty, nickname: string) => Promise<void>;
   onContinue: (match: MatchSummary) => Promise<void>;
   onContinueLast?: () => Promise<void>;
+  onCreateRoom: (playerCount: PlayerCount, nickname: string) => Promise<void>;
+  onJoinRoom: (nickname: string, target: { joinCode?: string; roomId?: string }) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const [playerCount, setPlayerCount] = useState<PlayerCount>(4);
@@ -31,6 +36,9 @@ export function SetupScreen({
   const [nickname, setNickname] = useState(readStoredNickname);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [onlineCount, setOnlineCount] = useState<PlayerCount>(4);
+  const [joinCodeInput, setJoinCodeInput] = useState("");
+  const [rooms, setRooms] = useState<RoomListItem[] | null>(null);
 
   const ready = Boolean(auth?.user || auth?.guest) && !bootError;
   const trimmed = nickname.trim();
@@ -46,6 +54,21 @@ export function SetupScreen({
       setBusy(false);
     }
   }
+
+  const refreshRooms = useCallback(async () => {
+    try {
+      const result = await listRooms();
+      setRooms(result.rooms);
+      setError(null);
+    } catch (err) {
+      setError(formatApiError(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    void refreshRooms();
+  }, [ready, refreshRooms]);
 
   return (
     <div className="setup">
@@ -123,6 +146,87 @@ export function SetupScreen({
           )}
         </div>
         {error && <p className="error">{error}</p>}
+        <section className="online-panel">
+          <h2>{t("onlineTitle")}</h2>
+          <div className="setup-cta">
+            <fieldset>
+              <legend>{t("playerCount")}</legend>
+              {([3, 4, 5] as const).map((n) => (
+                <label key={n}>
+                  <input
+                    type="radio"
+                    name="onlineCount"
+                    checked={onlineCount === n}
+                    onChange={() => setOnlineCount(n)}
+                  />
+                  {t("playerCountHumans", { count: n })}
+                </label>
+              ))}
+            </fieldset>
+            <button
+              type="button"
+              className="start-btn"
+              disabled={!ready || !trimmed || busy}
+              onClick={() => void run(() => onCreateRoom(onlineCount, trimmed))}
+            >
+              {busy ? t("creatingRoom") : t("createRoom")}
+            </button>
+            <label className="nick-field">
+              <span>{t("joinCode")}</span>
+              <input
+                type="text"
+                maxLength={6}
+                value={joinCodeInput}
+                placeholder={t("joinCodePlaceholder")}
+                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+              />
+            </label>
+            <button
+              type="button"
+              className="start-btn"
+              disabled={!ready || !trimmed || !joinCodeInput.trim() || busy}
+              onClick={() => void run(() => onJoinRoom(trimmed, { joinCode: joinCodeInput.trim() }))}
+            >
+              {busy ? t("joiningRoom") : t("joinRoom")}
+            </button>
+          </div>
+          <div className="room-list">
+            <div className="room-list-head">
+              <h3>{t("openRooms")}</h3>
+              <button
+                type="button"
+                className="text-btn"
+                disabled={!ready || busy}
+                onClick={() => void refreshRooms()}
+              >
+                {t("refreshRooms")}
+              </button>
+            </div>
+            {rooms && rooms.length === 0 && <p>{t("noOpenRooms")}</p>}
+            {rooms && rooms.length > 0 && (
+              <ul className="match-list">
+                {rooms.map((room) => (
+                  <li key={room.id}>
+                    {t("roomLine", {
+                      host: room.hostNickname ?? "?",
+                      taken: room.seatsTaken,
+                      count: room.playerCount,
+                    })}
+                    {" · "}
+                    <button
+                      type="button"
+                      className="text-btn"
+                      disabled={!ready || !trimmed || busy}
+                      onClick={() => void run(() => onJoinRoom(trimmed, { roomId: room.id }))}
+                    >
+                      {t("joinRoom")}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
         <StatsPanel
           authenticated={Boolean(auth?.authenticated)}
           onContinue={(match) => void run(() => onContinue(match))}

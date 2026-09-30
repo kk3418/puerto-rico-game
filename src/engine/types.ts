@@ -188,4 +188,6 @@ export interface SetupOptions {
   humanName: string;
   /** When omitted, the first governor is chosen from the seed/RNG. */
   governorIndex?: number;
+  /** Online tables: when length equals playerCount, every seat is human with these nicknames. */
+  seatNames?: string[];
 }

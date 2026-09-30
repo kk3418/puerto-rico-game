@@ -2,9 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { formatEndReason, formatLogEntry } from "../i18n/format";
-import { abandonMatch, finishMatch } from "../api/matches";
+import { abandonMatch, finishMatch, saveMatchConsent } from "../api/matches";
+import { ApiError } from "../api/client";
 import { formatApiError } from "../api/errorMessage";
 import { clearLastMatchId } from "../api/auth";
+import { getGameSocket } from "../api/socket";
+import type { OnlineErrorPayload, OnlineOverPayload, OnlineStatePayload } from "../api/types";
 import { HeuristicAgent, HumanAgent, dispatchAction, type PlayerAgent } from "../agents";
 import {
   chosenRoleFor,
@@ -12,6 +15,7 @@ import {
   createInitialState,
   getActorIndex,
   getLegalActions,
+  type Action,
   type Difficulty,
   type GameState,
   type PlayerCount,
@@ -37,6 +41,7 @@ export function GameScreen({
   initialState,
   nextSeq,
   playToken,
+  online = false,
   onExit,
 }: {
   matchId: string;
@@ -46,18 +51,19 @@ export function GameScreen({
   nickname: string;
   initialState?: GameState;
   nextSeq: number;
-  playToken: string;
+  playToken?: string;
+  online?: boolean;
   onExit: () => void;
 }) {
   const { t } = useTranslation();
   const humanRef = useRef(new HumanAgent());
   const startRef = useRef<GameState | null>(null);
-  if (!startRef.current) {
+  if (!startRef.current && !online) {
     startRef.current = initialState
       ? cloneViaJson(initialState)
       : createInitialState({ playerCount, difficulty, seed, humanName: nickname });
   }
-  const [state, setState] = useState<GameState>(startRef.current);
+  const [state, setState] = useState<GameState | null>(startRef.current);
   const stateRef = useRef(state);
   stateRef.current = state;
   const [busy, setBusy] = useState(false);
@@ -67,7 +73,7 @@ export function GameScreen({
   const [dialog, setDialog] = useState<null | "leave">(null);
   const [logOpen, setLogOpen] = useState(false);
   const [selectedPlayerIndex, setSelectedPlayerIndex] = useState(() =>
-    Math.max(0, startRef.current!.players.findIndex((p) => p.isHuman)),
+    startRef.current ? Math.max(0, startRef.current.players.findIndex((p) => p.isHuman)) : 0,
   );
   const logRef = useRef<HTMLElement>(null);
   const logToggleRef = useRef<HTMLButtonElement>(null);
@@ -77,17 +83,24 @@ export function GameScreen({
   const [verified, setVerified] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
-  const { enqueue, flush, pending, syncError } = useMatchSync(matchId, nextSeq, playToken);
+  const [seatIndex, setSeatIndex] = useState<number | null>(null);
+  const [serverLegal, setServerLegal] = useState<Action[]>([]);
+  const [connected, setConnected] = useState(true);
+  const [onlineOver, setOnlineOver] = useState<"abandoned" | null>(null);
+  const [consent, setConsent] = useState<{ consented: number; required: number } | null>(null);
+  const { enqueue, flush, pending, syncError } = useMatchSync(matchId, nextSeq, playToken ?? "");
 
   const enqueueRef = useRef(enqueue);
   enqueueRef.current = enqueue;
 
   useEffect(() => {
+    if (online) return;
     const human = humanRef.current;
+    const initial = stateRef.current;
+    if (!initial) return;
     let cancelled = false;
     let delayTimer: ReturnType<typeof setTimeout> | undefined;
     let delayResolve: (() => void) | undefined;
-    const initial = stateRef.current;
     const agents: Record<string, PlayerAgent> = {};
     for (const p of initial.players) {
       agents[p.id] = p.isHuman ? human : new HeuristicAgent();
@@ -167,7 +180,69 @@ export function GameScreen({
       delayResolve?.();
       human.cancel();
     };
-  }, [difficulty, playerCount]);
+  }, [difficulty, online, playerCount]);
+
+  useEffect(() => {
+    if (!online) return;
+    const socket = getGameSocket();
+
+    function watch() {
+      socket.emit("game:watch", { matchId });
+    }
+    function onConnect() {
+      setConnected(true);
+      watch();
+    }
+    function onState(payload: OnlineStatePayload) {
+      if (payload.matchId !== matchId) return;
+      setState(payload.state);
+      setServerLegal(payload.legalActions);
+      if (typeof payload.seatIndex === "number") {
+        setSeatIndex((prev) => prev ?? payload.seatIndex!);
+      }
+    }
+    function onOver(payload: OnlineOverPayload) {
+      if (payload.matchId !== matchId) return;
+      clearLastMatchId();
+      if (payload.status === "finished" && payload.scores) {
+        setServerScores(payload.scores);
+        setServerReason(payload.endReason ?? null);
+        setVerified(true);
+      } else {
+        setOnlineOver("abandoned");
+      }
+    }
+    function onGameError(payload: OnlineErrorPayload) {
+      setError(formatApiError(new ApiError(0, payload.error ?? "", payload.code, payload.params)));
+    }
+    function onDisconnect() {
+      setConnected(false);
+    }
+
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onDisconnect);
+    socket.on("game:state", onState);
+    socket.on("game:over", onOver);
+    socket.on("game:error", onGameError);
+    if (socket.connected) {
+      watch();
+    } else {
+      setConnected(false);
+    }
+    return () => {
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onDisconnect);
+      socket.off("game:state", onState);
+      socket.off("game:over", onOver);
+      socket.off("game:error", onGameError);
+    };
+  }, [online, matchId]);
+
+  useEffect(() => {
+    if (online && seatIndex !== null) setSelectedPlayerIndex(seatIndex);
+  }, [online, seatIndex]);
 
   const completeFinish = useCallback(async () => {
     await flush();
@@ -177,7 +252,7 @@ export function GameScreen({
   }, [flush, matchId]);
 
   useEffect(() => {
-    if (!state.gameOver || !state.scores) return;
+    if (online || !state?.gameOver || !state?.scores) return;
     let cancelled = false;
     setFinishing(true);
     void (async () => {
@@ -196,7 +271,7 @@ export function GameScreen({
     return () => {
       cancelled = true;
     };
-  }, [completeFinish, state.gameOver, state.scores]);
+  }, [completeFinish, online, state?.gameOver, state?.scores]);
 
   useEffect(() => {
     if (!logOpen) return;
@@ -225,9 +300,18 @@ export function GameScreen({
     const list = logListRef.current;
     if (!list) return;
     list.scrollTop = list.scrollHeight;
-  }, [logOpen, state.log]);
+  }, [logOpen, state?.log]);
 
   function onAct(action: Parameters<typeof dispatchAction>[1]) {
+    if (online) {
+      const current = stateRef.current;
+      if (seatIndex === null || !current || getActorIndex(current) !== seatIndex) {
+        setError(i18n.t("notYourTurn"));
+        return;
+      }
+      getGameSocket().emit("game:action", { matchId, action });
+      return;
+    }
     try {
       humanRef.current.submit(action);
     } catch (err) {
@@ -236,6 +320,7 @@ export function GameScreen({
   }
 
   function onLeave() {
+    setConsent(null);
     setDialog("leave");
   }
 
@@ -249,10 +334,23 @@ export function GameScreen({
     onExit();
   }
 
+  async function onLeaveConsent() {
+    try {
+      const result = await saveMatchConsent(matchId);
+      if (result.complete) {
+        onExit();
+        return;
+      }
+      setConsent({ consented: result.consented, required: result.required });
+    } catch (err) {
+      setError(formatApiError(err, i18n.t("leaveFailed", { ns: "game" })));
+    }
+  }
+
   async function onLeaveAbandon() {
     try {
       await flush().catch(() => undefined);
-      if (!stateRef.current.gameOver) {
+      if (!stateRef.current?.gameOver) {
         await abandonMatch(matchId);
       }
       clearLastMatchId();
@@ -261,6 +359,40 @@ export function GameScreen({
       return;
     }
     onExit();
+  }
+
+  if (onlineOver === "abandoned") {
+    return (
+      <div className="table">
+        <Dialog
+          title={t("matchEnded", { ns: "game" })}
+          actions={
+            <button type="button" className="text-btn" onClick={onExit}>
+              {t("leave", { ns: "game" })}
+            </button>
+          }
+        >
+          <p>{t("errors.MATCH_ABANDONED")}</p>
+        </Dialog>
+      </div>
+    );
+  }
+
+  if (!state) {
+    return (
+      <div className="setup">
+        <div className="setup-sky" aria-hidden="true" />
+        <div className="setup-island" aria-hidden="true" />
+        <main className="setup-main">
+          <p className="brand">{t("brand")}</p>
+          <p>{t("waitingForState", { ns: "game" })}</p>
+          {error && <p className="error">{error}</p>}
+          <button type="button" className="text-btn" onClick={onExit}>
+            {t("leave", { ns: "game" })}
+          </button>
+        </main>
+      </div>
+    );
   }
 
   if (state.gameOver && state.scores) {
@@ -288,9 +420,14 @@ export function GameScreen({
     );
   }
 
-  const legal = getLegalActions(state);
-  const humanTurn = awaitingHuman && !busy;
-  const youIndex = Math.max(0, state.players.findIndex((p) => p.isHuman));
+  const legal = online ? serverLegal : getLegalActions(state);
+  const currentTurnSeat = online ? getActorIndex(state) : turnSeat;
+  const humanTurn = online
+    ? seatIndex !== null && currentTurnSeat === seatIndex && !state.gameOver
+    : awaitingHuman && !busy;
+  const youIndex = online
+    ? (seatIndex ?? 0)
+    : Math.max(0, state.players.findIndex((p) => p.isHuman));
   const selectedPlayer = state.players[selectedPlayerIndex] ?? state.players[youIndex]!;
   const selectedIsYou = selectedPlayerIndex === youIndex;
 
@@ -301,7 +438,17 @@ export function GameScreen({
         <p>
           {t("roundHeader", { ns: "game", round: state.round, name: state.players[state.governorIndex]?.name })}
           {state.endTriggered ? t("endTriggered", { ns: "game" }) : ""}
-          {syncError ? t("syncFailed", { ns: "game" }) : pending > 0 ? t("syncing", { ns: "game" }) : ""}
+          {online
+            ? !connected
+              ? ` · ${t("connectionLost", { ns: "game" })}`
+              : !humanTurn && !state.gameOver
+                ? ` · ${t("waitingForOpponent", { ns: "game" })}`
+                : ""
+            : syncError
+              ? t("syncFailed", { ns: "game" })
+              : pending > 0
+                ? t("syncing", { ns: "game" })
+                : ""}
         </p>
         <div className="table-actions">
           <LanguageSelect />
@@ -349,13 +496,35 @@ export function GameScreen({
               <button type="button" className="text-btn" onClick={() => void onLeaveAbandon()}>
                 {t("no", { ns: "game" })}
               </button>
-              <button type="button" className="text-btn" onClick={() => void onLeaveKeep()}>
-                {t("yes", { ns: "game" })}
-              </button>
+              {online ? (
+                consent ? (
+                  <button type="button" className="text-btn" onClick={onExit}>
+                    {t("leave", { ns: "game" })}
+                  </button>
+                ) : (
+                  <button type="button" className="text-btn" onClick={() => void onLeaveConsent()}>
+                    {t("yes", { ns: "game" })}
+                  </button>
+                )
+              ) : (
+                <button type="button" className="text-btn" onClick={() => void onLeaveKeep()}>
+                  {t("yes", { ns: "game" })}
+                </button>
+              )}
             </>
           }
         >
-          <p>{t("leaveBody", { ns: "game" })}</p>
+          <p>
+            {online
+              ? consent
+                ? t("saveConsentProgress", {
+                    ns: "game",
+                    consented: consent.consented,
+                    required: consent.required,
+                  })
+                : t("leaveBodyOnline", { ns: "game" })
+              : t("leaveBody", { ns: "game" })}
+          </p>
         </Dialog>
       )}
 
@@ -367,8 +536,9 @@ export function GameScreen({
               playerIndex,
             }))}
             selectedIndex={selectedPlayerIndex}
-            turnSeat={turnSeat}
+            turnSeat={currentTurnSeat}
             governorIndex={state.governorIndex}
+            youIndex={online ? (seatIndex ?? undefined) : undefined}
             onSelect={setSelectedPlayerIndex}
           />
           <div
@@ -381,7 +551,7 @@ export function GameScreen({
               key={selectedPlayer.id}
               player={selectedPlayer}
               self={selectedIsYou}
-              acting={selectedIsYou ? humanTurn : turnSeat === selectedPlayerIndex}
+              acting={selectedIsYou ? humanTurn : currentTurnSeat === selectedPlayerIndex}
               legal={selectedIsYou && humanTurn ? legal : []}
               onAct={onAct}
               humanTurn={selectedIsYou && humanTurn}
@@ -400,7 +570,7 @@ export function GameScreen({
           <ActionPanel
             legal={humanTurn ? legal : []}
             onAct={onAct}
-            busy={busy}
+            busy={online ? !humanTurn : busy}
             prompt={phasePrompt(state.phase.type)}
             phaseType={humanTurn ? state.phase.type : undefined}
             activeRole={state.phase.type === "chooseRole" ? null : state.activeRole}

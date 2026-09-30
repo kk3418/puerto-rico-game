@@ -1,0 +1,58 @@
+.lobby-code {
+  margin: 1.6rem 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  font-weight: 700;
+  color: var(--foam);
+}
+
+.lobby-code strong {
+  font-family: "Fraunces", serif;
+  font-size: 2rem;
+  letter-spacing: 0.3em;
+  color: var(--sand-light);
+}
+
+.lobby-waiting {
+  margin: 1rem 0 0;
+  color: var(--foam);
+}
+
+.lobby-seats {
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-width: 24rem;
+}
+
+.lobby-seats li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.55rem 0.7rem;
+  background: rgba(11, 47, 54, 0.45);
+  font-weight: 700;
+}
+
+.lobby-seats li.empty {
+  opacity: 0.6;
+  font-weight: 500;
+}
+
+.lobby-host {
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sand);
+}
+
+.lobby-actions {
+  margin-top: 1.6rem;
+  display: flex;
+  gap: 1rem;
+}
