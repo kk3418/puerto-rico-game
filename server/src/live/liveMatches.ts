@@ -4,6 +4,7 @@ import {
   getActorIndex,
   getLegalActions,
   isLegalAction,
+  isPlayerCount,
   type Action,
   type GameState,
 } from "../../../src/engine";
@@ -40,7 +41,7 @@ async function loadEntry(matchId: string): Promise<LiveEntry> {
     include: { participants: { orderBy: { seatIndex: "asc" } }, _count: { select: { events: true } } },
   });
   if (!match) throw new HttpError(404, "找不到對局", "MATCH_NOT_FOUND");
-  if (match.playerCount !== 3 && match.playerCount !== 4 && match.playerCount !== 5) {
+  if (!isPlayerCount(match.playerCount)) {
     throw new HttpError(409, "對局紀錄無法重放", "MATCH_REPLAY_FAILED");
   }
   if (match.difficulty !== "balanced" && match.difficulty !== "aggressive") {

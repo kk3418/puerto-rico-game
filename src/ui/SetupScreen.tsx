@@ -36,7 +36,7 @@ export function SetupScreen({
   const [nickname, setNickname] = useState(readStoredNickname);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [onlineCount, setOnlineCount] = useState<PlayerCount>(4);
+  const [onlineCount, setOnlineCount] = useState<PlayerCount>(2);
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [rooms, setRooms] = useState<RoomListItem[] | null>(null);
 
@@ -151,7 +151,7 @@ export function SetupScreen({
           <div className="setup-cta">
             <fieldset>
               <legend>{t("playerCount")}</legend>
-              {([3, 4, 5] as const).map((n) => (
+              {([2, 3, 4, 5] as const).map((n) => (
                 <label key={n}>
                   <input
                     type="radio"

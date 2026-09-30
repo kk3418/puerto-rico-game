@@ -17,7 +17,7 @@ const ONLINE_ACTIVE_STATUSES = ["lobby", "playing"];
 
 const createBodySchema = z.object({
   nickname: nicknameSchema,
-  playerCount: z.union([z.literal(3), z.literal(4), z.literal(5)]),
+  playerCount: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
 });
 
 const joinBodySchema = z

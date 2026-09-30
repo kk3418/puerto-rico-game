@@ -1,4 +1,5 @@
 import type { ScoreBreakdown } from "../../../src/engine";
+import { isPlayerCount } from "../../../src/engine";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { isAction, replayMatch, replaySeatNames } from "./replay";
@@ -88,7 +89,7 @@ export async function finishMatch(matchId: string): Promise<FinishResult> {
     return event.action;
   });
 
-  if (match.playerCount !== 3 && match.playerCount !== 4 && match.playerCount !== 5) {
+  if (!isPlayerCount(match.playerCount)) {
     throw new HttpError(400, "對局人數無效", "INVALID_PLAYER_COUNT");
   }
   if (match.difficulty !== "balanced" && match.difficulty !== "aggressive") {

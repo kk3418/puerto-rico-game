@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { Router } from "express";
 import { z } from "zod";
-import { actionsEqual, applyAction, applyFailureDetail, getLegalActions, type Action } from "../../../src/engine";
+import { actionsEqual, applyAction, applyFailureDetail, getLegalActions, isPlayerCount, type Action } from "../../../src/engine";
 import { nicknameSchema } from "../validation";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
@@ -18,7 +18,7 @@ import { describeActionContext, isAction, isSupportedSaveSchema, replaySeatNames
 import { replayCache } from "./replayCache";
 import { classifySeq } from "./seq";
 
-const playerCountSchema = z.union([z.literal(3), z.literal(4), z.literal(5)]);
+const playerCountSchema = z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5)]);
 const difficultySchema = z.enum(["balanced", "aggressive"]);
 
 const eventSchema = z.object({
@@ -192,7 +192,7 @@ matchesRouter.get("/:id/state", async (req, res) => {
   if (match.status !== "playing") {
     throw new HttpError(404, "無法找到該局遊戲", "MATCH_NOT_FOUND");
   }
-  if (match.playerCount !== 3 && match.playerCount !== 4 && match.playerCount !== 5) {
+  if (!isPlayerCount(match.playerCount)) {
     throw new HttpError(404, "無法找到該局遊戲", "MATCH_NOT_FOUND");
   }
   if (match.difficulty !== "balanced" && match.difficulty !== "aggressive") {
@@ -311,7 +311,7 @@ matchesRouter.post("/:id/events", async (req, res) => {
 
   const toCreate: Prisma.MatchEventCreateManyInput[] = [];
   if (accepted.length > 0) {
-    if (match.playerCount !== 3 && match.playerCount !== 4 && match.playerCount !== 5) {
+    if (!isPlayerCount(match.playerCount)) {
       throw new HttpError(400, "對局人數無效", "INVALID_PLAYER_COUNT");
     }
     if (match.difficulty !== "balanced" && match.difficulty !== "aggressive") {
@@ -435,7 +435,7 @@ matchesRouter.post("/:id/save-consent", async (req, res) => {
   const complete = humanSeats.every((p) => consentedSeats.has(p.seatIndex));
 
   if (complete && match.mode === "online") {
-    if (match.playerCount !== 3 && match.playerCount !== 4 && match.playerCount !== 5) {
+    if (!isPlayerCount(match.playerCount)) {
       throw new HttpError(400, "對局人數無效", "INVALID_PLAYER_COUNT");
     }
     if (match.difficulty !== "balanced" && match.difficulty !== "aggressive") {
