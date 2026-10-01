@@ -49,6 +49,8 @@ export type MatchSummary = {
   eventCount: number;
   hasSave: boolean;
   playToken?: string | null;
+  joinCode?: string | null;
+  hostSeatIndex?: number | null;
   participants: Array<{
     seatIndex: number;
     nickname: string;

@@ -7,6 +7,7 @@ import { createInitialState, type GameState, type PlayerCount } from "../../../s
 import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, type SessionIdentity } from "../identity";
+import { redactStateForClient } from "../live/redact";
 import { nicknameSchema } from "../validation";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -250,7 +251,7 @@ roomsRouter.post("/join", async (req, res) => {
       });
 
       const room = roomSummary({ ...joined.match, status: joined.status, participants: joined.participants });
-      res.json(joined.state ? { ...room, state: joined.state } : room);
+      res.json(joined.state ? { ...room, state: redactStateForClient(joined.state) } : room);
       return;
     } catch (err) {
       if (isUniqueViolation(err) && attempt < 2) continue;

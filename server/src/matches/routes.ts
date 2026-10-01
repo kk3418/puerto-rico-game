@@ -10,7 +10,7 @@ import { HttpError } from "../errors";
 import { requireIdentity, requireUser } from "../identity";
 import { broadcastMatchAbandoned } from "../live/gameServer";
 import { dropLiveMatch, getLiveState, withMatchLock } from "../live/liveMatches";
-import { redactStateForClient } from "../live/redact";
+import { redactSavedStateForClient, redactStateForClient } from "../live/redact";
 import { canAccessMatch } from "./access";
 import { finishMatch } from "./finish";
 import { canReadMatchSave, publicSeed } from "./public";
@@ -70,6 +70,8 @@ function matchSummary(match: {
   endedAt: Date | null;
   status: string;
   verified: boolean;
+  joinCode?: string | null;
+  hostSeatIndex?: number;
   participants: Array<{
     seatIndex: number;
     nickname: string;
@@ -90,6 +92,7 @@ function matchSummary(match: {
   save: { matchId: string } | null;
   _count: { events: number };
 }) {
+  const online = match.mode === "online";
   return {
     id: match.id,
     mode: match.mode,
@@ -104,6 +107,8 @@ function matchSummary(match: {
     verified: match.verified,
     eventCount: match._count.events,
     hasSave: Boolean(match.save),
+    joinCode: online ? (match.joinCode ?? null) : null,
+    hostSeatIndex: online ? (match.hostSeatIndex ?? 0) : null,
     participants: match.participants.map((p) => ({
       seatIndex: p.seatIndex,
       nickname: p.nickname,
@@ -562,7 +567,7 @@ matchesRouter.get("/:id/save", async (req, res) => {
     schemaVersion: match.save.schemaVersion,
     savedAt: match.save.savedAt,
     consentRequired: match.save.consentRequired,
-    state: match.save.stateJson,
+    state: redactSavedStateForClient(match.mode, match.save.stateJson),
   });
 });
 

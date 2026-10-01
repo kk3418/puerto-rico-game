@@ -38,6 +38,8 @@ export function LobbyScreen({
 }) {
   const { t } = useTranslation();
   const [seats, setSeats] = useState<LobbySeat[]>(room.seats);
+  const [hostSeatIndex, setHostSeatIndex] = useState<number | null>(room.hostSeatIndex);
+  const [joinCode, setJoinCode] = useState<string | null>(room.joinCode);
   const [closed, setClosed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +47,14 @@ export function LobbyScreen({
   const mySeat = seats.find(
     (p) => (auth?.user && p.userId === auth.user.id) || (auth?.guest && p.guestId === auth.guest.id),
   );
-  const isHost = mySeat != null && room.hostSeatIndex === mySeat.seatIndex;
+  const isHost = mySeat != null && hostSeatIndex === mySeat.seatIndex;
+
+  useEffect(() => {
+    setSeats(room.seats);
+    setHostSeatIndex(room.hostSeatIndex);
+    setJoinCode(room.joinCode);
+    setClosed(false);
+  }, [room]);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +78,8 @@ export function LobbyScreen({
             guestId: p.guestId,
           })),
         );
+        setHostSeatIndex(match.hostSeatIndex ?? null);
+        setJoinCode(match.joinCode ?? null);
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -121,10 +132,10 @@ export function LobbyScreen({
           </>
         ) : (
           <>
-            {room.joinCode && (
+            {joinCode && (
               <p className="lobby-code">
                 {t("joinCode")}
-                <strong>{room.joinCode}</strong>
+                <strong>{joinCode}</strong>
               </p>
             )}
             <p className="lobby-waiting">{t("lobbyWaiting", { taken: seats.length, count: room.playerCount })}</p>
@@ -139,7 +150,7 @@ export function LobbyScreen({
                         ? t("youSuffix", { ns: "game" })
                         : ""}
                     </span>
-                    {seat && room.hostSeatIndex === i && <span className="lobby-host">{t("hostBadge")}</span>}
+                    {seat && hostSeatIndex === i && <span className="lobby-host">{t("hostBadge")}</span>}
                   </li>
                 );
               })}

@@ -203,6 +203,8 @@ describe.skipIf(!ready)("HTTP integration", () => {
     const match = await createGuestMatch(agent, { nickname: "__it__public", seed: 11 });
     expect(match.seed).toBe(11);
     expect(match.playToken).toBeTruthy();
+    expect(match.joinCode).toBeNull();
+    expect(match.hostSeatIndex).toBeNull();
 
     await agent
       .put(`/api/matches/${match.id}/save`)
@@ -216,6 +218,8 @@ describe.skipIf(!ready)("HTTP integration", () => {
     const listed = await agent.get(`/api/matches/${match.id}`).expect(200);
     expect(listed.body.seed).toBeNull();
     expect(listed.body.playToken).toBeUndefined();
+    expect(listed.body.joinCode).toBeNull();
+    expect(listed.body.hostSeatIndex).toBe(0);
 
     const writeBlocked = await agent
       .put(`/api/matches/${match.id}/save`)
@@ -297,6 +301,12 @@ describe.skipIf(!ready)("HTTP integration", () => {
 
     const readable = await guest.get(`/api/matches/${match.id}/save`).expect(200);
     expect(readable.body.consentRequired).toBe(true);
-    expect(readable.body.state).toEqual(expectedState);
+    expect(readable.body.state.plantationDeck).toEqual([]);
+    expect(readable.body.state.plantationDeckCount).toBe(expectedState.plantationDeck.length);
+    expect(readable.body.state.plantationDiscard).toEqual([]);
+    expect(readable.body.state.plantationDiscardCount).toBe(expectedState.plantationDiscard.length);
+    expect("rng" in readable.body.state).toBe(false);
+    expect(readable.body.state.players).toEqual(expectedState.players);
+    expect(readable.body.state.round).toBe(expectedState.round);
   });
 });

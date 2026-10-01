@@ -18,3 +18,12 @@ export function redactStateForClient(state: GameState): RedactedGameState {
     plantationDiscardCount: plantationDiscard.length,
   };
 }
+
+/** Online saves keep full state in DB; clients only receive a redacted view. */
+export function redactSavedStateForClient(mode: string, stateJson: unknown): unknown {
+  if (mode !== "online") return stateJson;
+  if (!stateJson || typeof stateJson !== "object" || Array.isArray(stateJson)) return stateJson;
+  const record = stateJson as Record<string, unknown>;
+  if (!Array.isArray(record.plantationDeck)) return stateJson;
+  return redactStateForClient(stateJson as GameState);
+}

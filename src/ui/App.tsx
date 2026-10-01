@@ -13,7 +13,7 @@ import {
 import { ApiError } from "../api/client";
 import { formatApiError } from "../api/errorMessage";
 import { createMatch, getMatch, getMatchState } from "../api/matches";
-import { createRoom, joinRoom, listRooms, type RoomSummary } from "../api/rooms";
+import { createRoom, joinRoom, type RoomSummary } from "../api/rooms";
 import type { AuthMe, MatchSummary } from "../api/types";
 import type { Difficulty, GameState, PlayerCount } from "../engine";
 import { GameScreen } from "./GameScreen";
@@ -104,16 +104,11 @@ export function App() {
     try {
       const match = await getMatch(id);
       if (match.mode !== "online" || match.status !== "lobby") return false;
-      const { rooms } = await listRooms().catch(() => ({ rooms: [] }));
-      const item = rooms.find((r) => r.id === match.id);
-      const hostSeatIndex = item?.hostNickname
-        ? (match.participants.find((p) => p.nickname === item.hostNickname)?.seatIndex ?? null)
-        : null;
       setLobby({
         id: match.id,
-        joinCode: item?.joinCode ?? null,
+        joinCode: match.joinCode ?? null,
         playerCount: match.playerCount,
-        hostSeatIndex,
+        hostSeatIndex: match.hostSeatIndex ?? null,
         seats: match.participants.map((p) => ({
           seatIndex: p.seatIndex,
           nickname: p.nickname,

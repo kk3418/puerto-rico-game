@@ -92,6 +92,10 @@ describe.skipIf(!ready)("rooms API", () => {
     ]);
     expect(started.body.state.players.every((p: { isHuman: boolean }) => p.isHuman)).toBe(true);
     expect(started.body.state.gameOver).toBe(false);
+    expect(started.body.state.plantationDeck).toEqual([]);
+    expect(started.body.state.plantationDeckCount).toBeGreaterThan(0);
+    expect(started.body.state.plantationDiscard).toEqual([]);
+    expect("rng" in started.body.state).toBe(false);
 
     const stored = await prisma.match.findUnique({ where: { id: created.body.id } });
     expect(stored?.status).toBe("playing");
@@ -135,6 +139,12 @@ describe.skipIf(!ready)("rooms API", () => {
     expect(afterHost.body.room.hostSeatIndex).toBe(1);
     expect(afterHost.body.room.hostNickname).toBe("__it__l1");
     expect(afterHost.body.room.seatsTaken).toBe(2);
+
+    const matchView = await g1.get(`/api/matches/${room.body.id}`).expect(200);
+    expect(matchView.body.mode).toBe("online");
+    expect(matchView.body.status).toBe("lobby");
+    expect(matchView.body.hostSeatIndex).toBe(1);
+    expect(matchView.body.joinCode).toBe(room.body.joinCode);
 
     const rejoined = await host
       .post("/api/rooms/join")

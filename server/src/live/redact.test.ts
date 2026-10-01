@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyAction, createInitialState, getLegalActions } from "../../../src/engine";
-import { redactStateForClient } from "./redact";
+import { redactSavedStateForClient, redactStateForClient } from "./redact";
 
 function sampleState() {
   const start = createInitialState({
@@ -49,5 +49,24 @@ describe("redactStateForClient", () => {
     redactStateForClient(state);
     expect(state.plantationDeck).toEqual(deckBefore);
     expect(typeof state.rng).toBe("number");
+  });
+});
+
+describe("redactSavedStateForClient", () => {
+  it("redacts online saves and leaves solo saves alone", () => {
+    const state = sampleState();
+    const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+
+    const online = redactSavedStateForClient("online", json) as Record<string, unknown>;
+    expect(online.plantationDeck).toEqual([]);
+    expect(online.plantationDeckCount).toBe(state.plantationDeck.length);
+    expect("rng" in online).toBe(false);
+
+    expect(redactSavedStateForClient("solo", json)).toEqual(json);
+  });
+
+  it("passes through non-state payloads", () => {
+    expect(redactSavedStateForClient("online", { round: 1 })).toEqual({ round: 1 });
+    expect(redactSavedStateForClient("online", null)).toBeNull();
   });
 });
