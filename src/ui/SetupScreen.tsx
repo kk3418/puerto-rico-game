@@ -1,12 +1,15 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { readStoredNickname } from "../api/auth";
 import { formatApiError } from "../api/errorMessage";
+import { listRooms, type RoomListItem } from "../api/rooms";
 import type { AuthMe, MatchSummary } from "../api/types";
 import type { Difficulty, PlayerCount } from "../engine/types";
 import { AuthBar } from "./AuthBar";
 import { StatsPanel } from "./StatsPanel";
 import "./SetupScreen.css";
+
+type SetupTab = "online" | "solo";
 
 export function SetupScreen({
   auth,
@@ -16,6 +19,8 @@ export function SetupScreen({
   onStart,
   onContinue,
   onContinueLast,
+  onCreateRoom,
+  onJoinRoom,
 }: {
   auth: AuthMe | null;
   authError: string | null;
@@ -24,13 +29,19 @@ export function SetupScreen({
   onStart: (playerCount: PlayerCount, difficulty: Difficulty, nickname: string) => Promise<void>;
   onContinue: (match: MatchSummary) => Promise<void>;
   onContinueLast?: () => Promise<void>;
+  onCreateRoom: (playerCount: PlayerCount, nickname: string) => Promise<void>;
+  onJoinRoom: (nickname: string, target: { joinCode?: string; roomId?: string }) => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const [tab, setTab] = useState<SetupTab>("online");
   const [playerCount, setPlayerCount] = useState<PlayerCount>(4);
   const [difficulty, setDifficulty] = useState<Difficulty>("balanced");
   const [nickname, setNickname] = useState(readStoredNickname);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [onlineCount, setOnlineCount] = useState<PlayerCount>(2);
+  const [joinCodeInput, setJoinCodeInput] = useState("");
+  const [rooms, setRooms] = useState<RoomListItem[] | null>(null);
 
   const ready = Boolean(auth?.user || auth?.guest) && !bootError;
   const trimmed = nickname.trim();
@@ -47,6 +58,21 @@ export function SetupScreen({
     }
   }
 
+  const refreshRooms = useCallback(async () => {
+    try {
+      const result = await listRooms();
+      setRooms(result.rooms);
+      setError(null);
+    } catch (err) {
+      setError(formatApiError(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ready || tab !== "online") return;
+    void refreshRooms();
+  }, [ready, tab, refreshRooms]);
+
   return (
     <div className="setup">
       <div className="setup-sky" aria-hidden="true" />
@@ -57,72 +83,204 @@ export function SetupScreen({
         <AuthBar auth={auth} onAuthChange={onAuthChange} />
         {authError && <p className="error">{authError}</p>}
         {bootError && <p className="error">{t("bootHint", { message: bootError })}</p>}
-        <div className="setup-cta">
-          <label className="nick-field">
-            <span>{t("nickname")}</span>
-            <input
-              type="text"
-              maxLength={24}
-              value={nickname}
-              placeholder={t("nicknamePlaceholder")}
-              onChange={(e) => setNickname(e.target.value)}
-            />
-          </label>
-          <fieldset>
-            <legend>{t("playerCount")}</legend>
-            {([3, 4, 5] as const).map((n) => (
-              <label key={n}>
-                <input
-                  type="radio"
-                  name="count"
-                  checked={playerCount === n}
-                  onChange={() => setPlayerCount(n)}
-                />
-                {t("playerCountOption", { count: n, ai: n - 1 })}
-              </label>
-            ))}
-          </fieldset>
-          <fieldset>
-            <legend>{t("ai")}</legend>
-            <label>
-              <input
-                type="radio"
-                name="diff"
-                checked={difficulty === "balanced"}
-                onChange={() => setDifficulty("balanced")}
-              />
-              {t("aiBalanced")}
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="diff"
-                checked={difficulty === "aggressive"}
-                onChange={() => setDifficulty("aggressive")}
-              />
-              {t("aiAggressive")}
-            </label>
-          </fieldset>
+
+        <label className="nick-field setup-nick">
+          <span>{t("nickname")}</span>
+          <input
+            type="text"
+            maxLength={24}
+            value={nickname}
+            placeholder={t("nicknamePlaceholder")}
+            onChange={(e) => setNickname(e.target.value)}
+          />
+        </label>
+
+        <div className="setup-tabs" role="tablist" aria-label={t("setupModes")}>
           <button
             type="button"
-            className="start-btn"
-            disabled={!ready || !trimmed || busy}
-            onClick={() => void run(() => onStart(playerCount, difficulty, trimmed))}
+            role="tab"
+            id="setup-tab-online"
+            aria-selected={tab === "online"}
+            aria-controls="setup-panel-online"
+            className={tab === "online" ? "is-active" : undefined}
+            onClick={() => {
+              setTab("online");
+              setError(null);
+            }}
           >
-            {busy ? t("starting") : t("start")}
+            {t("onlineTitle")}
           </button>
-          {onContinueLast && (
-            <button
-              type="button"
-              className="text-btn"
-              disabled={busy || !ready}
-              onClick={() => void run(onContinueLast)}
-            >
-              {t("continueLast")}
-            </button>
-          )}
+          <button
+            type="button"
+            role="tab"
+            id="setup-tab-solo"
+            aria-selected={tab === "solo"}
+            aria-controls="setup-panel-solo"
+            className={tab === "solo" ? "is-active" : undefined}
+            onClick={() => {
+              setTab("solo");
+              setError(null);
+            }}
+          >
+            {t("soloTitle")}
+          </button>
         </div>
+
         {error && <p className="error">{error}</p>}
+
+        {tab === "online" ? (
+          <section
+            className="setup-panel"
+            role="tabpanel"
+            id="setup-panel-online"
+            aria-labelledby="setup-tab-online"
+          >
+            <div className="setup-cta">
+              <fieldset>
+                <legend>{t("playerCount")}</legend>
+                {([2, 3, 4, 5] as const).map((n) => (
+                  <label key={n}>
+                    <input
+                      type="radio"
+                      name="onlineCount"
+                      checked={onlineCount === n}
+                      onChange={() => setOnlineCount(n)}
+                    />
+                    {t("playerCountHumans", { count: n })}
+                  </label>
+                ))}
+              </fieldset>
+              <div className="setup-actions-row">
+                <button
+                  type="button"
+                  className="start-btn"
+                  disabled={!ready || !trimmed || busy}
+                  onClick={() => void run(() => onCreateRoom(onlineCount, trimmed))}
+                >
+                  {busy ? t("creatingRoom") : t("createRoom")}
+                </button>
+                <label className="nick-field">
+                  <span>{t("joinCode")}</span>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={joinCodeInput}
+                    placeholder={t("joinCodePlaceholder")}
+                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="start-btn"
+                  disabled={!ready || !trimmed || !joinCodeInput.trim() || busy}
+                  onClick={() => void run(() => onJoinRoom(trimmed, { joinCode: joinCodeInput.trim() }))}
+                >
+                  {busy ? t("joiningRoom") : t("joinRoom")}
+                </button>
+              </div>
+            </div>
+            <div className="room-list">
+              <div className="room-list-head">
+                <h3>{t("openRooms")}</h3>
+                <button
+                  type="button"
+                  className="text-btn"
+                  disabled={!ready || busy}
+                  onClick={() => void refreshRooms()}
+                >
+                  {t("refreshRooms")}
+                </button>
+              </div>
+              {rooms && rooms.length === 0 && <p>{t("noOpenRooms")}</p>}
+              {rooms && rooms.length > 0 && (
+                <ul className="match-list">
+                  {rooms.map((room) => (
+                    <li key={room.id}>
+                      {t("roomLine", {
+                        host: room.hostNickname ?? "?",
+                        taken: room.seatsTaken,
+                        count: room.playerCount,
+                      })}
+                      {" · "}
+                      <button
+                        type="button"
+                        className="text-btn"
+                        disabled={!ready || !trimmed || busy}
+                        onClick={() => void run(() => onJoinRoom(trimmed, { roomId: room.id }))}
+                      >
+                        {t("joinRoom")}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        ) : (
+          <section
+            className="setup-panel"
+            role="tabpanel"
+            id="setup-panel-solo"
+            aria-labelledby="setup-tab-solo"
+          >
+            <div className="setup-cta">
+              <fieldset>
+                <legend>{t("playerCount")}</legend>
+                {([3, 4, 5] as const).map((n) => (
+                  <label key={n}>
+                    <input
+                      type="radio"
+                      name="count"
+                      checked={playerCount === n}
+                      onChange={() => setPlayerCount(n)}
+                    />
+                    {t("playerCountOption", { count: n, ai: n - 1 })}
+                  </label>
+                ))}
+              </fieldset>
+              <fieldset>
+                <legend>{t("ai")}</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name="diff"
+                    checked={difficulty === "balanced"}
+                    onChange={() => setDifficulty("balanced")}
+                  />
+                  {t("aiBalanced")}
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="diff"
+                    checked={difficulty === "aggressive"}
+                    onChange={() => setDifficulty("aggressive")}
+                  />
+                  {t("aiAggressive")}
+                </label>
+              </fieldset>
+              <button
+                type="button"
+                className="start-btn"
+                disabled={!ready || !trimmed || busy}
+                onClick={() => void run(() => onStart(playerCount, difficulty, trimmed))}
+              >
+                {busy ? t("starting") : t("start")}
+              </button>
+              {onContinueLast && (
+                <button
+                  type="button"
+                  className="text-btn"
+                  disabled={busy || !ready}
+                  onClick={() => void run(onContinueLast)}
+                >
+                  {t("continueLast")}
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
         <StatsPanel
           authenticated={Boolean(auth?.authenticated)}
           onContinue={(match) => void run(() => onContinue(match))}

@@ -43,7 +43,11 @@ export type BuildingKind = "productionSmall" | "productionLarge" | "violet" | "l
 
 export type Difficulty = "balanced" | "aggressive";
 
-export type PlayerCount = 3 | 4 | 5;
+export type PlayerCount = 2 | 3 | 4 | 5;
+
+export function isPlayerCount(value: number): value is PlayerCount {
+  return value === 2 || value === 3 || value === 4 || value === 5;
+}
 
 export interface IslandTile {
   type: TileType;
@@ -188,4 +192,6 @@ export interface SetupOptions {
   humanName: string;
   /** When omitted, the first governor is chosen from the seed/RNG. */
   governorIndex?: number;
+  /** Online tables: when length equals playerCount, every seat is human with these nicknames. */
+  seatNames?: string[];
 }

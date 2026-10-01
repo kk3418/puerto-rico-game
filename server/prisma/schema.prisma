@@ -43,22 +43,25 @@ model Session {
 }
 
 model Match {
-  id          String    @id @default(cuid())
-  mode        String    @default("solo")
-  playerCount Int
-  difficulty  String
-  seed        Int
-  humanName   String
-  endReason   String?
-  startedAt   DateTime  @default(now())
-  endedAt     DateTime?
-  status      String    @default("playing")
-  verified    Boolean   @default(false)
-  playToken   String?
+  id            String    @id @default(cuid())
+  mode          String    @default("solo")
+  playerCount   Int
+  difficulty    String
+  seed          Int
+  humanName     String
+  endReason     String?
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  status        String    @default("playing")
+  verified      Boolean   @default(false)
+  playToken     String?
+  joinCode      String?   @unique
+  hostSeatIndex Int       @default(0)
 
   participants MatchParticipant[]
   events       MatchEvent[]
   save         MatchSave?
+  saveConsents SaveConsent[]
 
   @@index([status, startedAt])
 }
@@ -128,4 +131,17 @@ model MatchSave {
 
   match   Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
   savedBy User? @relation(fields: [savedByUserId], references: [id], onDelete: SetNull)
+}
+
+model SaveConsent {
+  id        String   @id @default(cuid())
+  matchId   String
+  seatIndex Int
+  userId    String?
+  guestId   String?
+  createdAt DateTime @default(now())
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, seatIndex])
 }

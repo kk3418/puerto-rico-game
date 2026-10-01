@@ -4,15 +4,15 @@ import { nextUnit, shuffleInPlace } from "./rng";
 import type { GameState, PlayerCount, PlayerState, Role, SetupOptions, TileType } from "./types";
 
 export function colonistCount(playerCount: PlayerCount): number {
-  return playerCount === 3 ? 55 : playerCount === 4 ? 75 : 95;
+  return playerCount === 2 ? 40 : playerCount === 3 ? 55 : playerCount === 4 ? 75 : 95;
 }
 
 export function vpChipCount(playerCount: PlayerCount): number {
-  return playerCount === 3 ? 75 : playerCount === 4 ? 100 : 122;
+  return playerCount === 2 ? 60 : playerCount === 3 ? 75 : playerCount === 4 ? 100 : 122;
 }
 
 export function shipCapacities(playerCount: PlayerCount): [number, number, number] {
-  if (playerCount === 3) return [4, 5, 6];
+  if (playerCount <= 3) return [4, 5, 6];
   if (playerCount === 4) return [5, 6, 7];
   return [6, 7, 8];
 }
@@ -22,6 +22,7 @@ export function startingDoubloons(playerCount: PlayerCount): number {
 }
 
 export function startingPlantations(playerCount: PlayerCount): TileType[] {
+  if (playerCount === 2) return ["indigo", "corn"];
   if (playerCount === 3) return ["indigo", "indigo", "corn"];
   if (playerCount === 4) return ["indigo", "indigo", "corn", "corn"];
   return ["indigo", "indigo", "indigo", "corn", "corn"];
@@ -35,13 +36,14 @@ export function createInitialState(options: SetupOptions): GameState {
   const playerCount = options.playerCount;
   const seed = options.seed ?? (Date.now() & 0x7fffffff);
   const starts = startingPlantations(playerCount);
+  const seatNames = options.seatNames?.length === playerCount ? options.seatNames : undefined;
   const players: PlayerState[] = [];
 
   for (let i = 0; i < playerCount; i++) {
-    const isHuman = i === 0;
+    const isHuman = seatNames !== undefined || i === 0;
     players.push({
       id: `p${i}`,
-      name: isHuman ? humanName : `AI ${i}`,
+      name: seatNames?.[i] ?? (isHuman ? humanName : `AI ${i}`),
       isHuman,
       doubloons: startingDoubloons(playerCount),
       vpChips: 0,
@@ -68,7 +70,7 @@ export function createInitialState(options: SetupOptions): GameState {
   let rng = shuffleInPlace(deck, seed);
 
   const roles: Role[] =
-    playerCount === 3
+    playerCount <= 3
       ? ["settler", "mayor", "builder", "craftsman", "trader", "captain"]
       : playerCount === 4
         ? ["settler", "mayor", "builder", "craftsman", "trader", "captain", "prospector"]

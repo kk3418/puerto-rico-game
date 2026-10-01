@@ -81,6 +81,7 @@ function statusLabel(
   status: MatchSummary["status"],
   t: (key: string) => string,
 ): string {
+  if (status === "lobby") return t("statusLobby");
   if (status === "playing") return t("statusPlaying");
   if (status === "finished") return t("statusFinished");
   return t("statusAbandoned");

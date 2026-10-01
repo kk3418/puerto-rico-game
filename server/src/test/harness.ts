@@ -24,8 +24,18 @@ export function testApp() {
   return request.agent(createApp());
 }
 
+function integrationSchema(): string {
+  const schema = new URL(env.DATABASE_URL).searchParams.get("schema") ?? "itest";
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(schema)) {
+    throw new Error(`unexpected integration schema name: ${schema}`);
+  }
+  return schema;
+}
+
 function adminDatabaseUrl(): string {
-  return env.DATABASE_URL.replace(/[?&]schema=itest/, "").replace(/\?$/, "");
+  const url = new URL(env.DATABASE_URL);
+  url.searchParams.delete("schema");
+  return url.toString();
 }
 
 export async function prepareIntegrationDb(): Promise<boolean> {
@@ -33,7 +43,7 @@ export async function prepareIntegrationDb(): Promise<boolean> {
     datasources: { db: { url: adminDatabaseUrl() } },
   });
   try {
-    await admin.$executeRawUnsafe("CREATE SCHEMA IF NOT EXISTS itest");
+    await admin.$executeRawUnsafe(`CREATE SCHEMA IF NOT EXISTS ${integrationSchema()}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`Skipping HTTP integration tests (Postgres unavailable): ${message}`);

@@ -24,7 +24,7 @@ import {
   type GameState,
 } from "../engine";
 
-function setup(playerCount: 3 | 4 | 5 = 3, seed = 1): GameState {
+function setup(playerCount: 2 | 3 | 4 | 5 = 3, seed = 1): GameState {
   return createInitialState({
     playerCount,
     difficulty: "balanced",
@@ -62,8 +62,8 @@ describe("setup", () => {
       expect(applyFailureDetail(err)).toBe("ILLEGAL_ACTION");
     }
   });
-  it("sets 3/4/5 player supplies, money, and ships", () => {
-    for (const n of [3, 4, 5] as const) {
+  it("sets 2/3/4/5 player supplies, money, and ships", () => {
+    for (const n of [2, 3, 4, 5] as const) {
       const s = setup(n);
       expect(s.players).toHaveLength(n);
       expect(s.players[0]!.doubloons).toBe(startingDoubloons(n));
@@ -75,6 +75,7 @@ describe("setup", () => {
       expect(s.quarrySupply).toBe(8);
       expect(s.phase.type).toBe("chooseRole");
     }
+    expect(setup(2).roles).toHaveLength(6);
   });
 
   it("gives indigo/corn clockwise from the governor, unoccupied", () => {
