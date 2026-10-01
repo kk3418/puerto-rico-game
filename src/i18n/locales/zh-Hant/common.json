@@ -37,6 +37,8 @@
   "eventSyncFailed": "事件同步失敗",
   "notYourTurn": "現在不是你的行動",
   "onlineTitle": "線上對戰",
+  "soloTitle": "人機對戰",
+  "setupModes": "遊玩模式",
   "playerCountHumans": "{{count}} 人",
   "createRoom": "開房",
   "creatingRoom": "開房中…",

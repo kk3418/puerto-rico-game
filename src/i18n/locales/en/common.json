@@ -37,6 +37,8 @@
   "eventSyncFailed": "Event sync failed",
   "notYourTurn": "It is not your turn",
   "onlineTitle": "Online play",
+  "soloTitle": "Vs AI",
+  "setupModes": "Play mode",
   "playerCountHumans": "{{count}} players",
   "createRoom": "Create room",
   "creatingRoom": "Creating…",

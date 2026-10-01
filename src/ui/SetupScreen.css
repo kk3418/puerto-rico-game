@@ -63,6 +63,38 @@
   max-width: 36rem;
 }
 
+.setup-nick {
+  margin-top: 1.6rem;
+  max-width: 16rem;
+}
+
+.setup-tabs {
+  margin-top: 1.5rem;
+  display: flex;
+  gap: 0.35rem;
+  max-width: 36rem;
+}
+
+.setup-tabs button {
+  border: 0;
+  background: rgba(11, 47, 54, 0.35);
+  color: var(--sand);
+  font-weight: 800;
+  font-size: 1rem;
+  padding: 0.65rem 1.15rem;
+}
+
+.setup-tabs button.is-active {
+  background: var(--clay);
+  color: #fff8e8;
+  box-shadow: 0 4px 0 var(--clay-dark);
+}
+
+.setup-panel {
+  margin-top: 1.1rem;
+  max-width: 36rem;
+}
+
 .auth-bar {
   display: flex;
   align-items: flex-end;
@@ -166,20 +198,6 @@
   font-size: 1.15rem;
 }
 
-.online-panel {
-  margin-top: 2.5rem;
-  max-width: 36rem;
-}
-
-.online-panel h2 {
-  margin: 0;
-  font-size: 1.15rem;
-}
-
-.online-panel .setup-cta {
-  margin-top: 0.8rem;
-}
-
 .room-list {
   margin-top: 1.2rem;
 }
@@ -211,11 +229,32 @@
 }
 
 .setup-cta {
-  margin-top: 2.2rem;
+  margin-top: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 1.4rem 2rem;
   align-items: end;
+}
+
+.setup-actions-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 0.85rem;
+}
+
+.setup-actions-row .nick-field {
+  flex: 0 0 auto;
+}
+
+.setup-actions-row .nick-field input {
+  min-width: 8.5rem;
+  width: 8.5rem;
+}
+
+.setup-actions-row .start-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .setup-cta fieldset {
