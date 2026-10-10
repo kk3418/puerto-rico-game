@@ -9,6 +9,7 @@ import { HttpError } from "../errors";
 import { requireIdentity, type SessionIdentity } from "../identity";
 import { redactStateForClient } from "../live/redact";
 import { nicknameSchema } from "../validation";
+import { dropStaleLobbySeats } from "./presence";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -161,6 +162,7 @@ roomsRouter.post("/", async (req, res) => {
                 guestId: identity.guestId ?? null,
                 isHuman: true,
                 isAi: false,
+                lobbySeenAt: new Date(),
               },
             ],
           },
@@ -185,7 +187,20 @@ roomsRouter.get("/", async (req, res) => {
     take: 50,
     include: { participants: { orderBy: { seatIndex: "asc" } } },
   });
-  res.json({ rooms: matches.map(roomListItem) });
+  const rooms = [];
+  for (const match of matches) {
+    const dropped = await dropStaleLobbySeats(match.id);
+    if (dropped.removed.length === 0) {
+      rooms.push(roomListItem(match));
+      continue;
+    }
+    const fresh = await prisma.match.findUnique({
+      where: { id: match.id },
+      include: { participants: { orderBy: { seatIndex: "asc" } } },
+    });
+    if (fresh) rooms.push(roomListItem(fresh));
+  }
+  res.json({ rooms });
 });
 
 roomsRouter.post("/join", async (req, res) => {
@@ -199,8 +214,14 @@ roomsRouter.post("/join", async (req, res) => {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const joined = await prisma.$transaction(async (tx) => {
-        const match = await tx.match.findFirst({
+        const located = await tx.match.findFirst({
           where: joinCode ? { joinCode, mode: "online" } : { id: body.roomId!, mode: "online" },
+          select: { id: true },
+        });
+        if (!located) throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
+        await dropStaleLobbySeats(located.id, tx);
+        const match = await tx.match.findFirst({
+          where: { id: located.id, mode: "online" },
           include: { participants: { orderBy: { seatIndex: "asc" } } },
         });
         if (!match) throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
@@ -230,6 +251,7 @@ roomsRouter.post("/join", async (req, res) => {
             guestId: identity.guestId ?? null,
             isHuman: true,
             isAi: false,
+            lobbySeenAt: new Date(),
           },
         });
         const participants = [...match.participants, created].sort((a, b) => a.seatIndex - b.seatIndex);

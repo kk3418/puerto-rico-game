@@ -185,4 +185,46 @@ describe.skipIf(!ready)("rooms API", () => {
       .expect(404);
     expect(rejoin.body.code).toBe("ROOM_NOT_FOUND");
   });
+
+  it("does not auto-start when a seated player has left the page", async () => {
+    const host = await guestAgent("__it__ah");
+    const room = await host.post("/api/rooms").send({ nickname: "__it__ah", playerCount: 3 }).expect(201);
+    const gone = await guestAgent("__it__ag");
+    await gone.post("/api/rooms/join").send({ nickname: "__it__ag", joinCode: room.body.joinCode }).expect(200);
+    await gone.post(`/api/rooms/${room.body.id}/leave`).expect(200);
+
+    const third = await guestAgent("__it__at");
+    const joined = await third
+      .post("/api/rooms/join")
+      .send({ nickname: "__it__at", joinCode: room.body.joinCode })
+      .expect(200);
+    expect(joined.body.status).toBe("lobby");
+    expect(joined.body.seats.map((s: { nickname: string }) => s.nickname)).toEqual(["__it__ah", "__it__at"]);
+
+    const lobby = await host.get(`/api/matches/${room.body.id}`).expect(200);
+    expect(lobby.body.status).toBe("lobby");
+    expect(lobby.body.participants.map((p: { nickname: string }) => p.nickname)).toEqual(["__it__ah", "__it__at"]);
+  });
+
+  it("drops a lobby seat that stopped checking in before the room can fill", async () => {
+    const host = await guestAgent("__it__sh");
+    const room = await host.post("/api/rooms").send({ nickname: "__it__sh", playerCount: 3 }).expect(201);
+    const gone = await guestAgent("__it__sg");
+    await gone.post("/api/rooms/join").send({ nickname: "__it__sg", joinCode: room.body.joinCode }).expect(200);
+    await prisma.matchParticipant.updateMany({
+      where: { matchId: room.body.id, nickname: "__it__sg" },
+      data: { lobbySeenAt: new Date(0) },
+    });
+
+    const third = await guestAgent("__it__st");
+    const joined = await third
+      .post("/api/rooms/join")
+      .send({ nickname: "__it__st", roomId: room.body.id })
+      .expect(200);
+    expect(joined.body.status).toBe("lobby");
+    expect(joined.body.seats.map((s: { nickname: string }) => s.nickname)).toEqual(["__it__sh", "__it__st"]);
+
+    const listed = await host.get("/api/rooms").expect(200);
+    expect(listed.body.rooms.find((item: { id: string }) => item.id === room.body.id)?.seatsTaken).toBe(2);
+  });
 });

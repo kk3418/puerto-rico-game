@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import { formatApiError } from "../api/errorMessage";
@@ -55,6 +55,19 @@ export function LobbyScreen({
     setJoinCode(room.joinCode);
     setClosed(false);
   }, [room]);
+
+  const seatsRef = useRef(seats);
+  seatsRef.current = seats;
+
+  useEffect(() => {
+    const id = room.id;
+    function onPageHide() {
+      if (seatsRef.current.length <= 1) return;
+      void fetch(`/api/rooms/${id}/leave`, { method: "POST", credentials: "include", keepalive: true });
+    }
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [room.id]);
 
   useEffect(() => {
     let cancelled = false;
