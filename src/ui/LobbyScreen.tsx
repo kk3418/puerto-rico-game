@@ -71,29 +71,39 @@ export function LobbyScreen({
 
   useEffect(() => {
     let cancelled = false;
+
+    async function apply(match: Awaited<ReturnType<typeof getMatch>>): Promise<boolean> {
+      if (cancelled) return false;
+      if (match.status === "playing") {
+        onStart();
+        return false;
+      }
+      if (match.status !== "lobby") {
+        setClosed(true);
+        return false;
+      }
+      const next = match.participants.map((p) => ({
+        seatIndex: p.seatIndex,
+        nickname: p.nickname,
+        userId: p.userId,
+        guestId: p.guestId,
+      }));
+      seatsRef.current = next;
+      setSeats(next);
+      setHostSeatIndex(match.hostSeatIndex ?? null);
+      setJoinCode(match.joinCode ?? null);
+      setError(null);
+      return true;
+    }
+
     async function poll() {
       try {
-        const match = await getMatch(room.id);
-        if (cancelled) return;
-        if (match.status === "playing") {
-          onStart();
-          return;
-        }
-        if (match.status !== "lobby") {
-          setClosed(true);
-          return;
-        }
-        setSeats(
-          match.participants.map((p) => ({
-            seatIndex: p.seatIndex,
-            nickname: p.nickname,
-            userId: p.userId,
-            guestId: p.guestId,
-          })),
-        );
-        setHostSeatIndex(match.hostSeatIndex ?? null);
-        setJoinCode(match.joinCode ?? null);
-        setError(null);
+        const ready = seatsRef.current.length === room.playerCount;
+        const match = await getMatch(room.id, ready);
+        const stay = await apply(match);
+        if (!stay || ready || seatsRef.current.length !== room.playerCount) return;
+        const again = await getMatch(room.id, true);
+        await apply(again);
       } catch (err) {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 404) {
@@ -109,7 +119,7 @@ export function LobbyScreen({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [room.id, onStart]);
+  }, [room.id, room.playerCount, onStart]);
 
   const leave = useCallback(async () => {
     setBusy(true);

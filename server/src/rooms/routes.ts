@@ -3,13 +3,11 @@ import { randomInt } from "node:crypto";
 import type { Request } from "express";
 import { Router } from "express";
 import { z } from "zod";
-import { createInitialState, type GameState, type PlayerCount } from "../../../src/engine";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, type SessionIdentity } from "../identity";
-import { redactStateForClient } from "../live/redact";
 import { nicknameSchema } from "../validation";
-import { dropStaleLobbySeats } from "./presence";
+import { dropStaleLobbySeats, lockMatchRow } from "./presence";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -189,7 +187,10 @@ roomsRouter.get("/", async (req, res) => {
   });
   const rooms = [];
   for (const match of matches) {
-    const dropped = await dropStaleLobbySeats(match.id);
+    const dropped = await prisma.$transaction(async (tx) => {
+      await lockMatchRow(match.id, tx);
+      return dropStaleLobbySeats(match.id, tx);
+    });
     if (dropped.removed.length === 0) {
       rooms.push(roomListItem(match));
       continue;
@@ -219,6 +220,7 @@ roomsRouter.post("/join", async (req, res) => {
           select: { id: true },
         });
         if (!located) throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
+        await lockMatchRow(located.id, tx);
         await dropStaleLobbySeats(located.id, tx);
         const match = await tx.match.findFirst({
           where: { id: located.id, mode: "online" },
@@ -255,25 +257,10 @@ roomsRouter.post("/join", async (req, res) => {
           },
         });
         const participants = [...match.participants, created].sort((a, b) => a.seatIndex - b.seatIndex);
-
-        let status = match.status;
-        let state: GameState | null = null;
-        if (participants.length === match.playerCount) {
-          state = createInitialState({
-            playerCount: match.playerCount as PlayerCount,
-            difficulty: "balanced",
-            seed: match.seed,
-            humanName: match.humanName,
-            seatNames: participants.map((p) => p.nickname),
-          });
-          await tx.match.update({ where: { id: match.id }, data: { status: "playing" } });
-          status = "playing";
-        }
-        return { match, participants, status, state };
+        return { match, participants };
       });
 
-      const room = roomSummary({ ...joined.match, status: joined.status, participants: joined.participants });
-      res.json(joined.state ? { ...room, state: redactStateForClient(joined.state) } : room);
+      res.json(roomSummary({ ...joined.match, participants: joined.participants }));
       return;
     } catch (err) {
       if (isUniqueViolation(err) && attempt < 2) continue;
@@ -287,6 +274,7 @@ roomsRouter.post("/:id/leave", async (req, res) => {
   const identity = requireIdentity(req);
   const id = roomIdParam(req);
   const room = await prisma.$transaction(async (tx) => {
+    await lockMatchRow(id, tx);
     const match = await loadOnlineRoom(id, tx);
     if (match.status !== "lobby") {
       throw new HttpError(409, "對局已開始，無法離開房間", "ROOM_NOT_LOBBY");
@@ -305,6 +293,12 @@ roomsRouter.post("/:id/leave", async (req, res) => {
       hostSeatIndex = remaining[0]!.seatIndex;
       await tx.match.update({ where: { id: match.id }, data: { hostSeatIndex } });
     }
+    if (remaining.length < match.playerCount) {
+      await tx.matchParticipant.updateMany({
+        where: { matchId: match.id },
+        data: { lobbyReadyAt: null },
+      });
+    }
     return roomSummary({ ...match, hostSeatIndex, participants: remaining });
   });
   res.json({ room });
@@ -314,6 +308,7 @@ roomsRouter.post("/:id/cancel", async (req, res) => {
   const identity = requireIdentity(req);
   const id = roomIdParam(req);
   await prisma.$transaction(async (tx) => {
+    await lockMatchRow(id, tx);
     const match = await loadOnlineRoom(id, tx);
     if (match.status !== "lobby") {
       throw new HttpError(409, "對局已開始，無法取消房間", "ROOM_NOT_LOBBY");

@@ -48,7 +48,7 @@ describe.skipIf(!ready)("rooms API", () => {
     expect(item.seatsTaken).toBe(1);
   });
 
-  it("joins by code or id, rejects duplicate identities, and starts when full", async () => {
+  it("joins by code or id, rejects duplicate identities, and starts only after every seat acknowledges", async () => {
     const host = await guestAgent("__it__h2");
     const created = await host.post("/api/rooms").send({ nickname: "__it__h2", playerCount: 3 }).expect(201);
 
@@ -79,23 +79,33 @@ describe.skipIf(!ready)("rooms API", () => {
     expect(elsewhere.body.code).toBe("ROOM_ALREADY_IN_MATCH");
 
     const g2 = await guestAgent("__it__g2");
-    const started = await g2
+    const filled = await g2
       .post("/api/rooms/join")
       .send({ nickname: "__it__g2", roomId: created.body.id })
       .expect(200);
-    expect(started.body.status).toBe("playing");
-    expect(started.body.seatsTaken).toBe(3);
-    expect(started.body.state.players.map((p: { name: string }) => p.name)).toEqual([
+    expect(filled.body.status).toBe("lobby");
+    expect(filled.body.seatsTaken).toBe(3);
+    expect(filled.body.state).toBeUndefined();
+
+    const hostReady = await host.get(`/api/matches/${created.body.id}?ready=1`).expect(200);
+    expect(hostReady.body.status).toBe("lobby");
+    const g1Ready = await g1.get(`/api/matches/${created.body.id}?ready=1`).expect(200);
+    expect(g1Ready.body.status).toBe("lobby");
+    const g2Ready = await g2.get(`/api/matches/${created.body.id}?ready=1`).expect(200);
+    expect(g2Ready.body.status).toBe("playing");
+
+    const live = await host.get(`/api/matches/${created.body.id}/state`).expect(200);
+    expect(live.body.state.players.map((p: { name: string }) => p.name)).toEqual([
       "__it__h2",
       "__it__g1",
       "__it__g2",
     ]);
-    expect(started.body.state.players.every((p: { isHuman: boolean }) => p.isHuman)).toBe(true);
-    expect(started.body.state.gameOver).toBe(false);
-    expect(started.body.state.plantationDeck).toEqual([]);
-    expect(started.body.state.plantationDeckCount).toBeGreaterThan(0);
-    expect(started.body.state.plantationDiscard).toEqual([]);
-    expect("rng" in started.body.state).toBe(false);
+    expect(live.body.state.players.every((p: { isHuman: boolean }) => p.isHuman)).toBe(true);
+    expect(live.body.state.gameOver).toBe(false);
+    expect(live.body.state.plantationDeck).toEqual([]);
+    expect(live.body.state.plantationDeckCount).toBeGreaterThan(0);
+    expect(live.body.state.plantationDiscard).toEqual([]);
+    expect("rng" in live.body.state).toBe(false);
 
     const stored = await prisma.match.findUnique({ where: { id: created.body.id } });
     expect(stored?.status).toBe("playing");
@@ -226,5 +236,52 @@ describe.skipIf(!ready)("rooms API", () => {
 
     const listed = await host.get("/api/rooms").expect(200);
     expect(listed.body.rooms.find((item: { id: string }) => item.id === room.body.id)?.seatsTaken).toBe(2);
+  });
+
+  it("does not start a full room when a seat leaves before acknowledging", async () => {
+    const host = await guestAgent("__it__rh");
+    const room = await host.post("/api/rooms").send({ nickname: "__it__rh", playerCount: 3 }).expect(201);
+    const gone = await guestAgent("__it__rg");
+    const stay = await guestAgent("__it__rs");
+    await gone.post("/api/rooms/join").send({ nickname: "__it__rg", joinCode: room.body.joinCode }).expect(200);
+    const filled = await stay
+      .post("/api/rooms/join")
+      .send({ nickname: "__it__rs", joinCode: room.body.joinCode })
+      .expect(200);
+    expect(filled.body.status).toBe("lobby");
+
+    const early = await host.get(`/api/matches/${room.body.id}?ready=1`).expect(200);
+    expect(early.body.status).toBe("lobby");
+    await gone.post(`/api/rooms/${room.body.id}/leave`).expect(200);
+
+    const hostReady = await host.get(`/api/matches/${room.body.id}?ready=1`).expect(200);
+    expect(hostReady.body.status).toBe("lobby");
+    const stayReady = await stay.get(`/api/matches/${room.body.id}?ready=1`).expect(200);
+    expect(stayReady.body.status).toBe("lobby");
+    expect(stayReady.body.participants.map((p: { nickname: string }) => p.nickname)).toEqual(["__it__rh", "__it__rs"]);
+
+    const seats = await prisma.matchParticipant.findMany({ where: { matchId: room.body.id } });
+    expect(seats.every((seat) => seat.lobbyReadyAt === null)).toBe(true);
+  });
+
+  it("does not start when a full-room seat stopped checking in", async () => {
+    const host = await guestAgent("__it__fh");
+    const room = await host.post("/api/rooms").send({ nickname: "__it__fh", playerCount: 3 }).expect(201);
+    const gone = await guestAgent("__it__fg");
+    const stay = await guestAgent("__it__fs");
+    await gone.post("/api/rooms/join").send({ nickname: "__it__fg", joinCode: room.body.joinCode }).expect(200);
+    await stay.post("/api/rooms/join").send({ nickname: "__it__fs", joinCode: room.body.joinCode }).expect(200);
+    await prisma.matchParticipant.updateMany({
+      where: { matchId: room.body.id, nickname: "__it__fg" },
+      data: { lobbySeenAt: new Date(0) },
+    });
+
+    const hostReady = await host.get(`/api/matches/${room.body.id}?ready=1`).expect(200);
+    expect(hostReady.body.status).toBe("lobby");
+    expect(hostReady.body.participants.map((p: { nickname: string }) => p.nickname)).toEqual(["__it__fh", "__it__fs"]);
+
+    const stayReady = await stay.get(`/api/matches/${room.body.id}?ready=1`).expect(200);
+    expect(stayReady.body.status).toBe("lobby");
+    expect(stayReady.body.participants.map((p: { nickname: string }) => p.nickname)).toEqual(["__it__fh", "__it__fs"]);
   });
 });

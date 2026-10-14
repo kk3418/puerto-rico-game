@@ -9,8 +9,9 @@ export function createMatch(input: CreateMatchInput): Promise<MatchSummary> {
   });
 }
 
-export function getMatch(id: string): Promise<MatchSummary> {
-  return api<MatchSummary>(`/matches/${id}`);
+export function getMatch(id: string, ready = false): Promise<MatchSummary> {
+  const query = ready ? "?ready=1" : "";
+  return api<MatchSummary>(`/matches/${id}${query}`);
 }
 
 export function getMatchState(id: string): Promise<MatchLiveState> {
