@@ -118,28 +118,9 @@ export function App() {
       });
       return true;
     } catch {
-      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
-      const nickname = readStoredNickname();
-      if (nav?.type !== "reload" || !nickname) return false;
-      try {
-        const room = await joinRoom({ nickname, roomId: id });
-        if (room.status === "playing") {
-          enterOnline(room.id, room.playerCount, nickname);
-          return true;
-        }
-        setLobby({
-          id: room.id,
-          joinCode: room.joinCode,
-          playerCount: room.playerCount,
-          hostSeatIndex: room.hostSeatIndex,
-          seats: room.seats,
-        });
-        return true;
-      } catch {
-        return false;
-      }
+      return false;
     }
-  }, [enterOnline]);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -199,10 +180,6 @@ export function App() {
     await createGuest(nickname);
     const room = await joinRoom({ nickname, ...target });
     writeLastMatchId(room.id);
-    if (room.status === "playing") {
-      enterOnline(room.id, room.playerCount, nickname);
-      return;
-    }
     setLobby(lobbyFromRoom(room));
   }
 

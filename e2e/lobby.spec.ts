@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { e2eDatabaseUrl } from "./database-url";
 
-const readyRequest = /\/api\/matches\/[^/?]+\?ready=1(?:&|$)/;
+const heartbeatRequest = /\/api\/rooms\/[^/]+\/heartbeat$/;
 
 let prisma: PrismaClient;
 
@@ -41,10 +41,8 @@ async function openSetup(context: BrowserContext, nickname: string): Promise<Pag
 }
 
 async function withholdReady(page: Page): Promise<void> {
-  await page.route(readyRequest, async (route) => {
-    const url = new URL(route.request().url());
-    url.searchParams.delete("ready");
-    const response = await route.fetch({ url: url.toString() });
+  await page.route(heartbeatRequest, async (route) => {
+    const response = await route.fetch({ postData: JSON.stringify({ ready: false }) });
     await route.fulfill({ response });
   });
 }
@@ -70,8 +68,8 @@ test("a full lobby stays open until both seats acknowledge it", async ({ browser
   await expect(host.getByRole("heading", { name: "Online lobby" })).toBeVisible();
   await expect(guest.getByRole("heading", { name: "Online lobby" })).toBeVisible();
 
-  await host.unroute(readyRequest);
-  await guest.unroute(readyRequest);
+  await host.unroute(heartbeatRequest);
+  await guest.unroute(heartbeatRequest);
 
   await expect(host.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible();
   await expect(guest.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible();
@@ -82,14 +80,21 @@ test("a full lobby stays open until both seats acknowledge it", async ({ browser
   await guestContext.close();
 });
 
-test("closing a lobby page drops that seat", async ({ browser }) => {
+test("closing a lobby page keeps the seat until that player goes quiet", async ({ browser }) => {
   const hostContext = await browser.newContext();
   const guestContext = await browser.newContext();
   const host = await openSetup(hostContext, "e2e-host");
   const guest = await openSetup(guestContext, "e2e-guest");
 
+  const created = host.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/rooms" &&
+      response.status() === 201,
+  );
   await host.getByRole("radio", { name: "3 players" }).check();
   await host.getByRole("button", { name: "Create room" }).click();
+  const room = (await (await created).json()) as { id: string };
   await expect(host.getByRole("heading", { name: "Online lobby" })).toBeVisible();
 
   await guest.getByRole("button", { name: "Refresh" }).click();
@@ -98,6 +103,14 @@ test("closing a lobby page drops that seat", async ({ browser }) => {
   await expect(host.getByRole("listitem").filter({ hasText: "e2e-guest" })).toBeVisible();
 
   await guest.close();
+  await host.waitForTimeout(2500);
+  await expect(host.getByText("2/3 players")).toBeVisible();
+  await expect(host.getByRole("listitem").filter({ hasText: "e2e-guest" })).toBeVisible();
+
+  await prisma.matchParticipant.updateMany({
+    where: { matchId: room.id, nickname: "e2e-guest" },
+    data: { lobbySeenAt: new Date(0) },
+  });
 
   await expect(host.getByText("1/3 players")).toBeVisible();
   await expect(host.getByRole("listitem").filter({ hasText: "e2e-guest" })).toHaveCount(0);

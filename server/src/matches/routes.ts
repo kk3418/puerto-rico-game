@@ -11,7 +11,6 @@ import { requireIdentity, requireUser } from "../identity";
 import { broadcastMatchAbandoned } from "../live/gameServer";
 import { dropLiveMatch, getLiveState, withMatchLock } from "../live/liveMatches";
 import { redactSavedStateForClient, redactStateForClient } from "../live/redact";
-import { acknowledgeLobby } from "../rooms/presence";
 import { canAccessMatch } from "./access";
 import { finishMatch } from "./finish";
 import { canReadMatchSave, publicSeed } from "./public";
@@ -189,7 +188,6 @@ matchesRouter.post("/", async (req, res) => {
 matchesRouter.get("/:id", async (req, res) => {
   const identity = requireIdentity(req);
   const id = matchIdParam(req);
-  await acknowledgeLobby(id, identity, req.query.ready === "1");
   const match = await loadOwnedMatch(id, identity);
   res.json(matchSummary(match));
 });

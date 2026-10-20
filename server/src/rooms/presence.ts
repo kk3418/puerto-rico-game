@@ -1,13 +1,22 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Match, MatchParticipant, Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "../db";
 import type { SessionIdentity } from "../identity";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
-/** Lobby polls every 2s. A closed tab stops polling; this is the backup if pagehide never arrives. */
-export const LOBBY_STALE_MS = 20_000;
+type SeatedMatch = Match & { participants: MatchParticipant[] };
 
-function holdsSeat(
+/**
+ * Lobby heartbeats every 2s. Hidden tabs are often throttled to about once a minute,
+ * so a seat stays until it has been quiet for longer than that gap.
+ * A server stall that quiets every seat is treated separately in `heartbeatLobby`.
+ */
+export const LOBBY_STALE_MS = 90_000;
+
+/** A full room starts only when every seat has acknowledged within this window. */
+export const LOBBY_READY_FRESH_MS = 15_000;
+
+export function holdsSeat(
   participant: { userId: string | null; guestId: string | null },
   identity: SessionIdentity,
 ): boolean {
@@ -17,88 +26,121 @@ function holdsSeat(
   );
 }
 
+export function seatIsStale(seenAt: Date | null | undefined, now = Date.now()): boolean {
+  if (seenAt == null) return false;
+  return seenAt.getTime() < now - LOBBY_STALE_MS;
+}
+
+function readyIsFresh(readyAt: Date | null | undefined, now: number): boolean {
+  return readyAt != null && readyAt.getTime() >= now - LOBBY_READY_FRESH_MS;
+}
+
 export async function lockMatchRow(matchId: string, db: Db): Promise<void> {
   await db.$queryRaw`SELECT "id" FROM "Match" WHERE "id" = ${matchId} FOR UPDATE`;
 }
 
-async function clearLobbyReady(matchId: string, db: Db): Promise<void> {
-  await db.matchParticipant.updateMany({
-    where: { matchId },
-    data: { lobbyReadyAt: null },
-  });
-}
-
-export async function touchLobbyPresence(matchId: string, identity: SessionIdentity, db: Db = prisma): Promise<void> {
-  const match = await db.match.findUnique({
-    where: { id: matchId },
-    include: { participants: true },
-  });
-  if (!match || match.mode !== "online" || match.status !== "lobby") return;
-  const seat = match.participants.find((p) => holdsSeat(p, identity));
-  if (!seat) return;
-  await db.matchParticipant.update({ where: { id: seat.id }, data: { lobbySeenAt: new Date() } });
-}
-
-export async function dropStaleLobbySeats(matchId: string, db: Db = prisma): Promise<{ removed: string[] }> {
-  const match = await db.match.findUnique({
-    where: { id: matchId },
-    include: { participants: true },
-  });
-  if (!match || match.mode !== "online" || match.status !== "lobby") return { removed: [] };
-  const cutoff = Date.now() - LOBBY_STALE_MS;
-  const seenAt = (at: Date | null | undefined) => at?.getTime() ?? Date.now();
-  const stale = match.participants.filter((p) => seenAt(p.lobbySeenAt) < cutoff);
-  if (stale.length === 0) return { removed: [] };
-  const remaining = match.participants.filter((p) => seenAt(p.lobbySeenAt) >= cutoff);
-  const removed = stale.map((p) => p.nickname);
+/** Drop the given seats, clear ready, and hand the host role to the lowest seat that remains. */
+export async function removeLobbySeats<T extends { id: string; seatIndex: number }>(
+  match: { id: string; hostSeatIndex: number; participants: T[] },
+  removeIds: readonly string[],
+  db: Db,
+): Promise<{ deleted: true } | { deleted: false; hostSeatIndex: number; participants: T[] }> {
+  const remove = new Set(removeIds);
+  const remaining = match.participants.filter((p) => !remove.has(p.id));
   if (remaining.length === 0) {
     await db.match.delete({ where: { id: match.id } });
-  } else {
-    await db.matchParticipant.deleteMany({ where: { id: { in: stale.map((p) => p.id) } } });
-    if (remaining.length < match.playerCount) await clearLobbyReady(match.id, db);
-    if (!remaining.some((p) => p.seatIndex === match.hostSeatIndex)) {
-      const hostSeatIndex = [...remaining].sort((a, b) => a.seatIndex - b.seatIndex)[0]!.seatIndex;
-      await db.match.update({ where: { id: match.id }, data: { hostSeatIndex } });
-    }
+    return { deleted: true };
   }
-  return { removed };
-}
-
-async function markLobbyReady(matchId: string, identity: SessionIdentity, db: Db): Promise<void> {
-  const match = await db.match.findUnique({
-    where: { id: matchId },
-    include: { participants: true },
+  await db.matchParticipant.deleteMany({ where: { id: { in: [...remove] } } });
+  await db.matchParticipant.updateMany({
+    where: { matchId: match.id },
+    data: { lobbyReadyAt: null },
   });
-  if (!match || match.mode !== "online" || match.status !== "lobby") return;
-  if (match.participants.length !== match.playerCount) return;
-  const seat = match.participants.find((p) => holdsSeat(p, identity));
-  if (!seat) return;
-  await db.matchParticipant.update({ where: { id: seat.id }, data: { lobbyReadyAt: new Date() } });
+  let hostSeatIndex = match.hostSeatIndex;
+  if (!remaining.some((p) => p.seatIndex === hostSeatIndex)) {
+    hostSeatIndex = [...remaining].sort((a, b) => a.seatIndex - b.seatIndex)[0]!.seatIndex;
+    await db.match.update({ where: { id: match.id }, data: { hostSeatIndex } });
+  }
+  const participants = remaining.map((p) => ({ ...p, lobbyReadyAt: null }));
+  return { deleted: false, hostSeatIndex, participants };
 }
 
-async function startLobbyIfReady(matchId: string, db: Db): Promise<void> {
-  const match = await db.match.findUnique({
-    where: { id: matchId },
-    include: { participants: true },
-  });
-  if (!match || match.mode !== "online" || match.status !== "lobby") return;
-  if (match.participants.length !== match.playerCount) return;
-  if (match.participants.some((p) => p.lobbyReadyAt == null)) return;
-  await db.match.update({ where: { id: match.id }, data: { status: "playing" } });
-}
+export type HeartbeatResult =
+  | { status: "missing" }
+  | { status: "forbidden" }
+  | { status: "ok"; match: SeatedMatch };
 
-/** Touch presence, drop stale seats, and start only when every current seat has acknowledged a full room. */
-export async function acknowledgeLobby(matchId: string, identity: SessionIdentity, ready: boolean): Promise<void> {
-  await prisma.$transaction(async (tx) => {
+/**
+ * Record presence for someone already seated. Does not lock or write when the caller has no seat.
+ * When every seat is stale together, refresh them instead of deleting the room on the first request back.
+ */
+export async function heartbeatLobby(
+  matchId: string,
+  identity: SessionIdentity,
+  ready: boolean,
+): Promise<HeartbeatResult> {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.match.findUnique({
+      where: { id: matchId },
+      include: { participants: { orderBy: { seatIndex: "asc" } } },
+    });
+    if (!existing || existing.mode !== "online") return { status: "missing" };
+    if (!existing.participants.some((p) => holdsSeat(p, identity))) return { status: "forbidden" };
+    if (existing.status !== "lobby") return { status: "ok", match: existing };
+
+    await lockMatchRow(matchId, tx);
     const match = await tx.match.findUnique({
       where: { id: matchId },
-      select: { mode: true, status: true },
+      include: { participants: { orderBy: { seatIndex: "asc" } } },
     });
-    if (!match || match.mode !== "online" || match.status !== "lobby") return;
-    await lockMatchRow(matchId, tx);
-    await touchLobbyPresence(matchId, identity, tx);
-    await dropStaleLobbySeats(matchId, tx);
-    if (ready) await markLobbyReady(matchId, identity, tx);
-    await startLobbyIfReady(matchId, tx);
+    if (!match || match.mode !== "online") return { status: "missing" };
+    const seat = match.participants.find((p) => holdsSeat(p, identity));
+    if (!seat) return { status: "forbidden" };
+    if (match.status !== "lobby") return { status: "ok", match };
+
+    const now = new Date();
+    const nowMs = now.getTime();
+    let participants = match.participants;
+    let hostSeatIndex = match.hostSeatIndex;
+
+    const allStale = participants.every((p) => seatIsStale(p.lobbySeenAt, nowMs));
+    if (allStale) {
+      await tx.matchParticipant.updateMany({
+        where: { matchId: match.id },
+        data: { lobbySeenAt: now },
+      });
+      participants = participants.map((p) => ({ ...p, lobbySeenAt: now }));
+    } else {
+      const staleIds = participants
+        .filter((p) => p.id !== seat.id && seatIsStale(p.lobbySeenAt, nowMs))
+        .map((p) => p.id);
+      if (staleIds.length > 0) {
+        const removed = await removeLobbySeats(match, staleIds, tx);
+        if (removed.deleted) return { status: "missing" };
+        participants = removed.participants;
+        hostSeatIndex = removed.hostSeatIndex;
+      }
+    }
+
+    const roomFull = participants.length === match.playerCount;
+    const markReady = ready && roomFull;
+    await tx.matchParticipant.update({
+      where: { id: seat.id },
+      data: {
+        lobbySeenAt: now,
+        ...(markReady ? { lobbyReadyAt: now } : {}),
+      },
+    });
+    participants = participants.map((p) =>
+      p.id === seat.id ? { ...p, lobbySeenAt: now, lobbyReadyAt: markReady ? now : p.lobbyReadyAt } : p,
+    );
+
+    let status = match.status;
+    if (roomFull && participants.every((p) => readyIsFresh(p.lobbyReadyAt, nowMs))) {
+      status = "playing";
+      await tx.match.update({ where: { id: match.id }, data: { status } });
+    }
+
+    return { status: "ok", match: { ...match, status, hostSeatIndex, participants } };
   });
 }

@@ -51,6 +51,13 @@ export function joinRoom(input: {
   });
 }
 
+export function heartbeatRoom(id: string, ready: boolean): Promise<RoomSummary> {
+  return api<RoomSummary>(`/rooms/${id}/heartbeat`, {
+    method: "POST",
+    body: JSON.stringify({ ready }),
+  });
+}
+
 export function leaveRoom(id: string): Promise<{ room: RoomSummary | null }> {
   return api(`/rooms/${id}/leave`, { method: "POST" });
 }

@@ -57,6 +57,7 @@
   "leaveRoom": "Leave room",
   "cancelRoom": "Cancel room",
   "roomClosed": "This room has been closed",
+  "lobbyRemoved": "You are no longer in this room",
   "back": "Back",
   "statusLobby": "In lobby",
   "errors": {
