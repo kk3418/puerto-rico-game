@@ -180,10 +180,6 @@ export function App() {
     await createGuest(nickname);
     const room = await joinRoom({ nickname, ...target });
     writeLastMatchId(room.id);
-    if (room.status === "playing") {
-      enterOnline(room.id, room.playerCount, nickname);
-      return;
-    }
     setLobby(lobbyFromRoom(room));
   }
 

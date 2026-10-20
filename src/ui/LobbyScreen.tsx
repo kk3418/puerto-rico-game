@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import { formatApiError } from "../api/errorMessage";
-import { getMatch } from "../api/matches";
-import { cancelRoom, leaveRoom } from "../api/rooms";
+import { cancelRoom, heartbeatRoom, leaveRoom, type RoomSummary } from "../api/rooms";
 import type { AuthMe } from "../api/types";
 import type { PlayerCount } from "../engine";
 import "./LobbyScreen.css";
@@ -40,7 +39,7 @@ export function LobbyScreen({
   const [seats, setSeats] = useState<LobbySeat[]>(room.seats);
   const [hostSeatIndex, setHostSeatIndex] = useState<number | null>(room.hostSeatIndex);
   const [joinCode, setJoinCode] = useState<string | null>(room.joinCode);
-  const [closed, setClosed] = useState(false);
+  const [notice, setNotice] = useState<"closed" | "removed" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,38 +52,47 @@ export function LobbyScreen({
     setSeats(room.seats);
     setHostSeatIndex(room.hostSeatIndex);
     setJoinCode(room.joinCode);
-    setClosed(false);
+    setNotice(null);
   }, [room]);
+
+  const seatsRef = useRef(seats);
+  seatsRef.current = seats;
 
   useEffect(() => {
     let cancelled = false;
+
+    async function apply(next: RoomSummary): Promise<boolean> {
+      if (cancelled) return false;
+      if (next.status === "playing") {
+        onStart();
+        return false;
+      }
+      if (next.status !== "lobby") {
+        setNotice("closed");
+        return false;
+      }
+      seatsRef.current = next.seats;
+      setSeats(next.seats);
+      setHostSeatIndex(next.hostSeatIndex);
+      setJoinCode(next.joinCode);
+      setError(null);
+      return true;
+    }
+
     async function poll() {
       try {
-        const match = await getMatch(room.id);
-        if (cancelled) return;
-        if (match.status === "playing") {
-          onStart();
-          return;
-        }
-        if (match.status !== "lobby") {
-          setClosed(true);
-          return;
-        }
-        setSeats(
-          match.participants.map((p) => ({
-            seatIndex: p.seatIndex,
-            nickname: p.nickname,
-            userId: p.userId,
-            guestId: p.guestId,
-          })),
-        );
-        setHostSeatIndex(match.hostSeatIndex ?? null);
-        setJoinCode(match.joinCode ?? null);
-        setError(null);
+        const ready = seatsRef.current.length === room.playerCount;
+        const match = await heartbeatRoom(room.id, ready);
+        const stay = await apply(match);
+        if (!stay || ready || seatsRef.current.length !== room.playerCount) return;
+        const again = await heartbeatRoom(room.id, true);
+        await apply(again);
       } catch (err) {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 404) {
-          setClosed(true);
+          setNotice("closed");
+        } else if (err instanceof ApiError && err.status === 403) {
+          setNotice("removed");
         } else {
           setError(formatApiError(err));
         }
@@ -96,7 +104,7 @@ export function LobbyScreen({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [room.id, onStart]);
+  }, [room.id, room.playerCount, onStart]);
 
   const leave = useCallback(async () => {
     setBusy(true);
@@ -109,6 +117,10 @@ export function LobbyScreen({
       }
       onExit();
     } catch (err) {
+      if (err instanceof ApiError && (err.status === 403 || err.code === "ROOM_NOT_JOINED")) {
+        onExit();
+        return;
+      }
       setError(formatApiError(err));
       setBusy(false);
     }
@@ -121,9 +133,9 @@ export function LobbyScreen({
       <main className="setup-main">
         <p className="brand">{t("brand")}</p>
         <h1>{t("lobbyTitle")}</h1>
-        {closed ? (
+        {notice ? (
           <>
-            <p className="error">{t("roomClosed")}</p>
+            <p className="error">{notice === "removed" ? t("lobbyRemoved") : t("roomClosed")}</p>
             <div className="lobby-actions">
               <button type="button" className="text-btn" onClick={onExit}>
                 {t("back")}

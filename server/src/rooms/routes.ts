@@ -3,12 +3,11 @@ import { randomInt } from "node:crypto";
 import type { Request } from "express";
 import { Router } from "express";
 import { z } from "zod";
-import { createInitialState, type GameState, type PlayerCount } from "../../../src/engine";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, type SessionIdentity } from "../identity";
-import { redactStateForClient } from "../live/redact";
 import { nicknameSchema } from "../validation";
+import { heartbeatLobby, holdsSeat, lockMatchRow, removeLobbySeats, seatIsStale } from "./presence";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -28,6 +27,10 @@ const joinBodySchema = z
     roomId: z.string().trim().min(1).optional(),
   })
   .refine((body) => Boolean(body.joinCode ?? body.roomId), { message: "缺少加入碼或房間 id" });
+
+const heartbeatBodySchema = z.object({
+  ready: z.boolean().optional(),
+});
 
 type RoomParticipant = {
   seatIndex: number;
@@ -62,13 +65,6 @@ function roomIdParam(req: Request): string {
   const id = req.params.id;
   if (typeof id !== "string" || !id) throw new HttpError(400, "缺少房間 id", "MISSING_ROOM_ID");
   return id;
-}
-
-function holdsSeat(participant: { userId: string | null; guestId: string | null }, identity: SessionIdentity): boolean {
-  return Boolean(
-    (identity.userId && participant.userId === identity.userId) ||
-      (identity.guestId && participant.guestId === identity.guestId),
-  );
 }
 
 async function assertNoActiveOnlineMatch(identity: SessionIdentity, db: Db = prisma): Promise<void> {
@@ -161,6 +157,7 @@ roomsRouter.post("/", async (req, res) => {
                 guestId: identity.guestId ?? null,
                 isHuman: true,
                 isAi: false,
+                lobbySeenAt: new Date(),
               },
             ],
           },
@@ -185,7 +182,14 @@ roomsRouter.get("/", async (req, res) => {
     take: 50,
     include: { participants: { orderBy: { seatIndex: "asc" } } },
   });
-  res.json({ rooms: matches.map(roomListItem) });
+  const now = Date.now();
+  const rooms = [];
+  for (const match of matches) {
+    const fresh = match.participants.filter((p) => !seatIsStale(p.lobbySeenAt, now));
+    if (fresh.length === 0 || fresh.length >= match.playerCount) continue;
+    rooms.push(roomListItem({ ...match, participants: fresh }));
+  }
+  res.json({ rooms });
 });
 
 roomsRouter.post("/join", async (req, res) => {
@@ -199,22 +203,49 @@ roomsRouter.post("/join", async (req, res) => {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const joined = await prisma.$transaction(async (tx) => {
-        const match = await tx.match.findFirst({
+        const located = await tx.match.findFirst({
           where: joinCode ? { joinCode, mode: "online" } : { id: body.roomId!, mode: "online" },
+          select: { id: true },
+        });
+        if (!located) throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
+        await lockMatchRow(located.id, tx);
+        const match = await tx.match.findFirst({
+          where: { id: located.id, mode: "online" },
           include: { participants: { orderBy: { seatIndex: "asc" } } },
         });
         if (!match) throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
+
+        const now = Date.now();
+        const stale = match.participants.filter((p) => seatIsStale(p.lobbySeenAt, now));
+        let hostSeatIndex = match.hostSeatIndex;
+        let participants = match.participants;
+        if (stale.length > 0 && stale.length === match.participants.length) {
+          await tx.matchParticipant.deleteMany({ where: { matchId: match.id } });
+          hostSeatIndex = 0;
+          await tx.match.update({ where: { id: match.id }, data: { hostSeatIndex } });
+          participants = [];
+        } else if (stale.length > 0) {
+          const removed = await removeLobbySeats(
+            match,
+            stale.map((p) => p.id),
+            tx,
+          );
+          if (removed.deleted) throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
+          hostSeatIndex = removed.hostSeatIndex;
+          participants = removed.participants;
+        }
+
         if (match.status !== "lobby") {
           throw new HttpError(409, "房間已開局或已關閉", "ROOM_NOT_LOBBY");
         }
-        if (match.participants.some((p) => holdsSeat(p, identity))) {
+        if (participants.some((p) => holdsSeat(p, identity))) {
           throw new HttpError(409, "你已在這個房間", "ROOM_ALREADY_IN_MATCH");
         }
         await assertNoActiveOnlineMatch(identity, tx);
 
         let seatIndex = -1;
         for (let i = 0; i < match.playerCount; i++) {
-          if (!match.participants.some((p) => p.seatIndex === i)) {
+          if (!participants.some((p) => p.seatIndex === i)) {
             seatIndex = i;
             break;
           }
@@ -230,28 +261,14 @@ roomsRouter.post("/join", async (req, res) => {
             guestId: identity.guestId ?? null,
             isHuman: true,
             isAi: false,
+            lobbySeenAt: new Date(),
           },
         });
-        const participants = [...match.participants, created].sort((a, b) => a.seatIndex - b.seatIndex);
-
-        let status = match.status;
-        let state: GameState | null = null;
-        if (participants.length === match.playerCount) {
-          state = createInitialState({
-            playerCount: match.playerCount as PlayerCount,
-            difficulty: "balanced",
-            seed: match.seed,
-            humanName: match.humanName,
-            seatNames: participants.map((p) => p.nickname),
-          });
-          await tx.match.update({ where: { id: match.id }, data: { status: "playing" } });
-          status = "playing";
-        }
-        return { match, participants, status, state };
+        const seated = [...participants, created].sort((a, b) => a.seatIndex - b.seatIndex);
+        return { match: { ...match, hostSeatIndex }, participants: seated };
       });
 
-      const room = roomSummary({ ...joined.match, status: joined.status, participants: joined.participants });
-      res.json(joined.state ? { ...room, state: redactStateForClient(joined.state) } : room);
+      res.json(roomSummary({ ...joined.match, participants: joined.participants }));
       return;
     } catch (err) {
       if (isUniqueViolation(err) && attempt < 2) continue;
@@ -261,10 +278,21 @@ roomsRouter.post("/join", async (req, res) => {
   throw new HttpError(409, "加入房間時發生衝突，請重試", "ROOM_JOIN_CONFLICT");
 });
 
+roomsRouter.post("/:id/heartbeat", async (req, res) => {
+  const identity = requireIdentity(req);
+  const id = roomIdParam(req);
+  const body = heartbeatBodySchema.parse(req.body ?? {});
+  const result = await heartbeatLobby(id, identity, body.ready === true);
+  if (result.status === "missing") throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
+  if (result.status === "forbidden") throw new HttpError(403, "無權存取此對局", "MATCH_FORBIDDEN");
+  res.json(roomSummary(result.match));
+});
+
 roomsRouter.post("/:id/leave", async (req, res) => {
   const identity = requireIdentity(req);
   const id = roomIdParam(req);
   const room = await prisma.$transaction(async (tx) => {
+    await lockMatchRow(id, tx);
     const match = await loadOnlineRoom(id, tx);
     if (match.status !== "lobby") {
       throw new HttpError(409, "對局已開始，無法離開房間", "ROOM_NOT_LOBBY");
@@ -272,18 +300,9 @@ roomsRouter.post("/:id/leave", async (req, res) => {
     const seat = match.participants.find((p) => holdsSeat(p, identity));
     if (!seat) throw new HttpError(409, "你不在這個房間", "ROOM_NOT_JOINED");
 
-    const remaining = match.participants.filter((p) => p.id !== seat.id);
-    if (remaining.length === 0) {
-      await tx.match.delete({ where: { id: match.id } });
-      return null;
-    }
-    await tx.matchParticipant.delete({ where: { id: seat.id } });
-    let hostSeatIndex = match.hostSeatIndex;
-    if (hostSeatIndex === seat.seatIndex) {
-      hostSeatIndex = remaining[0]!.seatIndex;
-      await tx.match.update({ where: { id: match.id }, data: { hostSeatIndex } });
-    }
-    return roomSummary({ ...match, hostSeatIndex, participants: remaining });
+    const removed = await removeLobbySeats(match, [seat.id], tx);
+    if (removed.deleted) return null;
+    return roomSummary({ ...match, hostSeatIndex: removed.hostSeatIndex, participants: removed.participants });
   });
   res.json({ room });
 });
@@ -292,6 +311,7 @@ roomsRouter.post("/:id/cancel", async (req, res) => {
   const identity = requireIdentity(req);
   const id = roomIdParam(req);
   await prisma.$transaction(async (tx) => {
+    await lockMatchRow(id, tx);
     const match = await loadOnlineRoom(id, tx);
     if (match.status !== "lobby") {
       throw new HttpError(409, "對局已開始，無法取消房間", "ROOM_NOT_LOBBY");
