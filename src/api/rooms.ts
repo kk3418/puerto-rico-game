@@ -58,6 +58,11 @@ export function heartbeatRoom(id: string, ready: boolean): Promise<RoomSummary> 
   });
 }
 
+/** Sent from pagehide, so it uses keepalive to outlive the page. */
+export function markRoomAway(id: string): Promise<void> {
+  return api<void>(`/rooms/${id}/away`, { method: "POST", keepalive: true });
+}
+
 export function leaveRoom(id: string): Promise<{ room: RoomSummary | null }> {
   return api(`/rooms/${id}/leave`, { method: "POST" });
 }

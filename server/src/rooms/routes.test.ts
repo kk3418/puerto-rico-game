@@ -7,6 +7,7 @@ import {
   resetIntegrationDb,
   testApp,
 } from "../test/harness";
+import { LOBBY_AWAY_GRACE_MS, LOBBY_STALE_MS } from "./presence";
 
 const ready = await prepareIntegrationDb();
 
@@ -369,5 +370,209 @@ describe.skipIf(!ready)("rooms API", () => {
     expect(hostReady.body.status).toBe("lobby");
     const guestReady = await guest.post(`/api/rooms/${room.body.id}/heartbeat`).send({ ready: true }).expect(200);
     expect(guestReady.body.status).toBe("playing");
+  });
+
+  it("lists a live room even when 50 older rooms have gone stale", async () => {
+    const longAgo = new Date(Date.now() - 60 * 60_000);
+    for (let i = 0; i < 50; i++) {
+      await prisma.match.create({
+        data: {
+          mode: "online",
+          status: "lobby",
+          playerCount: 3,
+          difficulty: "balanced",
+          seed: i,
+          humanName: `__it__old${i}`,
+          startedAt: longAgo,
+          participants: {
+            create: [
+              {
+                seatIndex: 0,
+                nickname: `__it__old${i}`,
+                guestId: `__it__old${i}`,
+                isHuman: true,
+                isAi: false,
+                lobbySeenAt: new Date(0),
+              },
+            ],
+          },
+        },
+      });
+    }
+
+    const host = await guestAgent("__it__live");
+    const room = await host.post("/api/rooms").send({ nickname: "__it__live", playerCount: 3 }).expect(201);
+    const list = await host.get("/api/rooms").expect(200);
+    expect(list.body.rooms.map((item: { id: string }) => item.id)).toEqual([room.body.id]);
+    expect(await prisma.match.count({ where: { mode: "online", status: "lobby" } })).toBe(51);
+  });
+
+  it("releases this identity's own stale lobby seat when it creates or joins another room", async () => {
+    const host = await guestAgent("__it__eh");
+    const abandoned = await host.post("/api/rooms").send({ nickname: "__it__eh", playerCount: 3 }).expect(201);
+    await prisma.matchParticipant.updateMany({
+      where: { matchId: abandoned.body.id },
+      data: { lobbySeenAt: new Date(0) },
+    });
+
+    const created = await host.post("/api/rooms").send({ nickname: "__it__eh", playerCount: 3 }).expect(201);
+    expect(await prisma.match.findUnique({ where: { id: abandoned.body.id } })).toBeNull();
+    const blocked = await host.post("/api/rooms").send({ nickname: "__it__eh", playerCount: 3 }).expect(409);
+    expect(blocked.body.code).toBe("ROOM_ALREADY_IN_MATCH");
+
+    const friend = await guestAgent("__it__ef");
+    await friend.post("/api/rooms/join").send({ nickname: "__it__ef", joinCode: created.body.joinCode }).expect(200);
+    await prisma.matchParticipant.updateMany({
+      where: { matchId: created.body.id, nickname: "__it__eh" },
+      data: { lobbySeenAt: new Date(0) },
+    });
+
+    const other = await guestAgent("__it__eo");
+    const target = await other.post("/api/rooms").send({ nickname: "__it__eo", playerCount: 3 }).expect(201);
+    const joined = await host
+      .post("/api/rooms/join")
+      .send({ nickname: "__it__eh", joinCode: target.body.joinCode })
+      .expect(200);
+    expect(joined.body.seats.map((s: { nickname: string }) => s.nickname)).toEqual(["__it__eo", "__it__eh"]);
+
+    const left = await prisma.match.findUnique({
+      where: { id: created.body.id },
+      include: { participants: true },
+    });
+    expect(left?.status).toBe("lobby");
+    expect(left?.hostSeatIndex).toBe(1);
+    expect(left?.participants.map((p) => p.nickname)).toEqual(["__it__ef"]);
+  });
+
+  it("lets two players join each other's rooms at once while each holds a stale seat in the other", async () => {
+    const x = await guestAgent("__it__dx");
+    const y = await guestAgent("__it__dy");
+    const roomX = await x.post("/api/rooms").send({ nickname: "__it__dx", playerCount: 3 }).expect(201);
+    const roomY = await y.post("/api/rooms").send({ nickname: "__it__dy", playerCount: 3 }).expect(201);
+    const fx = await guestAgent("__it__dfx");
+    const fy = await guestAgent("__it__dfy");
+    await fx.post("/api/rooms/join").send({ nickname: "__it__dfx", roomId: roomX.body.id }).expect(200);
+    await fy.post("/api/rooms/join").send({ nickname: "__it__dfy", roomId: roomY.body.id }).expect(200);
+    await prisma.matchParticipant.updateMany({
+      where: { nickname: { in: ["__it__dx", "__it__dy"] } },
+      data: { lobbySeenAt: new Date(0) },
+    });
+
+    let xSeatRoom: string = roomX.body.id;
+    let ySeatRoom: string = roomY.body.id;
+    for (let round = 0; round < 5; round++) {
+      const [xJoin, yJoin] = await Promise.all([
+        x.post("/api/rooms/join").send({ nickname: "__it__dx", roomId: ySeatRoom }),
+        y.post("/api/rooms/join").send({ nickname: "__it__dy", roomId: xSeatRoom }),
+      ]);
+      expect([xJoin.status, yJoin.status]).toEqual([200, 200]);
+      [xSeatRoom, ySeatRoom] = [ySeatRoom, xSeatRoom];
+      await prisma.matchParticipant.updateMany({
+        where: { nickname: { in: ["__it__dx", "__it__dy"] } },
+        data: { lobbySeenAt: new Date(0) },
+      });
+    }
+    const seats = await prisma.matchParticipant.findMany({ orderBy: { nickname: "asc" } });
+    expect(seats.map((s) => [s.nickname, s.matchId])).toEqual([
+      ["__it__dfx", roomX.body.id],
+      ["__it__dfy", roomY.body.id],
+      ["__it__dx", xSeatRoom],
+      ["__it__dy", ySeatRoom],
+    ]);
+  });
+
+  it("rejoins its own stale room by code without deleting it", async () => {
+    const host = await guestAgent("__it__rj");
+    const room = await host.post("/api/rooms").send({ nickname: "__it__rj", playerCount: 3 }).expect(201);
+    await prisma.matchParticipant.updateMany({
+      where: { matchId: room.body.id },
+      data: { lobbySeenAt: new Date(0) },
+    });
+
+    const back = await host
+      .post("/api/rooms/join")
+      .send({ nickname: "__it__rj", joinCode: room.body.joinCode })
+      .expect(200);
+    expect(back.body.id).toBe(room.body.id);
+    expect(back.body.hostSeatIndex).toBe(0);
+    expect(back.body.seats.map((s: { nickname: string }) => s.nickname)).toEqual(["__it__rj"]);
+  });
+
+  it("lets a hidden page's seat lapse after a short grace unless a heartbeat comes back", async () => {
+    const host = await guestAgent("__it__wh");
+    const room = await host.post("/api/rooms").send({ nickname: "__it__wh", playerCount: 3 }).expect(201);
+    const guest = await guestAgent("__it__wg");
+    await guest.post("/api/rooms/join").send({ nickname: "__it__wg", joinCode: room.body.joinCode }).expect(200);
+    const guestSeat = { matchId: room.body.id, nickname: "__it__wg" };
+
+    const before = Date.now();
+    await guest.post(`/api/rooms/${room.body.id}/away`).expect(204);
+    const after = Date.now();
+    const away = await prisma.matchParticipant.findFirstOrThrow({ where: guestSeat });
+    expect(away.lobbySeenAt.getTime()).toBeGreaterThanOrEqual(before - LOBBY_STALE_MS + LOBBY_AWAY_GRACE_MS);
+    expect(away.lobbySeenAt.getTime()).toBeLessThanOrEqual(after - LOBBY_STALE_MS + LOBBY_AWAY_GRACE_MS);
+
+    const kept = await host.post(`/api/rooms/${room.body.id}/heartbeat`).send({ ready: false }).expect(200);
+    expect(kept.body.seatsTaken).toBe(2);
+
+    await guest.post(`/api/rooms/${room.body.id}/heartbeat`).send({ ready: false }).expect(200);
+    const returned = await prisma.matchParticipant.findFirstOrThrow({ where: guestSeat });
+    expect(Date.now() - returned.lobbySeenAt.getTime()).toBeLessThan(5_000);
+
+    await guest.post(`/api/rooms/${room.body.id}/away`).expect(204);
+    const hidden = await prisma.matchParticipant.findFirstOrThrow({ where: guestSeat });
+    await prisma.matchParticipant.updateMany({
+      where: guestSeat,
+      data: { lobbySeenAt: new Date(hidden.lobbySeenAt.getTime() - LOBBY_AWAY_GRACE_MS - 1) },
+    });
+    const dropped = await host.post(`/api/rooms/${room.body.id}/heartbeat`).send({ ready: false }).expect(200);
+    expect(dropped.body.seats.map((s: { nickname: string }) => s.nickname)).toEqual(["__it__wh"]);
+  });
+
+  it("does not move a seat's last-seen time forward when its page is hidden", async () => {
+    const host = await guestAgent("__it__vh");
+    const room = await host.post("/api/rooms").send({ nickname: "__it__vh", playerCount: 3 }).expect(201);
+    await prisma.matchParticipant.updateMany({
+      where: { matchId: room.body.id },
+      data: { lobbySeenAt: new Date(0) },
+    });
+
+    await host.post(`/api/rooms/${room.body.id}/away`).expect(204);
+    const seat = await prisma.matchParticipant.findFirstOrThrow({ where: { matchId: room.body.id } });
+    expect(seat.lobbySeenAt.getTime()).toBe(0);
+  });
+
+  it("does not start a full room while a seat's page is hidden, and ignores away from strangers or after start", async () => {
+    const host = await guestAgent("__it__xh");
+    const room = await host.post("/api/rooms").send({ nickname: "__it__xh", playerCount: 2 }).expect(201);
+    const guest = await guestAgent("__it__xg");
+    await guest.post("/api/rooms/join").send({ nickname: "__it__xg", joinCode: room.body.joinCode }).expect(200);
+
+    const stranger = await guestAgent("__it__xs");
+    const denied = await stranger.post(`/api/rooms/${room.body.id}/away`).expect(403);
+    expect(denied.body.code).toBe("MATCH_FORBIDDEN");
+    const missing = await stranger.post("/api/rooms/no-such-room/away").expect(404);
+    expect(missing.body.code).toBe("ROOM_NOT_FOUND");
+
+    const guestReady = await guest.post(`/api/rooms/${room.body.id}/heartbeat`).send({ ready: true }).expect(200);
+    expect(guestReady.body.status).toBe("lobby");
+    await guest.post(`/api/rooms/${room.body.id}/away`).expect(204);
+    const away = await prisma.matchParticipant.findFirstOrThrow({
+      where: { matchId: room.body.id, nickname: "__it__xg" },
+    });
+    expect(away.lobbyReadyAt).toBeNull();
+
+    const hostReady = await host.post(`/api/rooms/${room.body.id}/heartbeat`).send({ ready: true }).expect(200);
+    expect(hostReady.body.status).toBe("lobby");
+    const guestBack = await guest.post(`/api/rooms/${room.body.id}/heartbeat`).send({ ready: true }).expect(200);
+    expect(guestBack.body.status).toBe("playing");
+
+    await guest.post(`/api/rooms/${room.body.id}/away`).expect(204);
+    const started = await prisma.match.findUnique({
+      where: { id: room.body.id },
+      include: { participants: true },
+    });
+    expect(started?.status).toBe("playing");
+    expect(started?.participants).toHaveLength(2);
   });
 });

@@ -7,7 +7,17 @@ import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, type SessionIdentity } from "../identity";
 import { nicknameSchema } from "../validation";
-import { heartbeatLobby, holdsSeat, lockMatchRow, removeLobbySeats, seatIsStale } from "./presence";
+import {
+  heartbeatLobby,
+  holdsSeat,
+  lobbyFreshSince,
+  lockMatchRow,
+  markLobbyAway,
+  releaseOwnStaleSeats,
+  removeLobbySeats,
+  seatIsStale,
+  seatsHeldBy,
+} from "./presence";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -70,10 +80,7 @@ function roomIdParam(req: Request): string {
 async function assertNoActiveOnlineMatch(identity: SessionIdentity, db: Db = prisma): Promise<void> {
   const existing = await db.matchParticipant.findFirst({
     where: {
-      OR: [
-        ...(identity.userId ? [{ userId: identity.userId }] : []),
-        ...(identity.guestId ? [{ guestId: identity.guestId }] : []),
-      ],
+      OR: seatsHeldBy(identity),
       match: { mode: "online", status: { in: ONLINE_ACTIVE_STATUSES } },
     },
   });
@@ -134,35 +141,37 @@ roomsRouter.post("/", async (req, res) => {
   if (identity.guestId) {
     req.session.guestNickname = body.nickname;
   }
-  await assertNoActiveOnlineMatch(identity);
-
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const match = await prisma.match.create({
-        data: {
-          mode: "online",
-          status: "lobby",
-          playerCount: body.playerCount,
-          difficulty: "balanced",
-          seed: randomInt(0x7fffffff),
-          humanName: body.nickname,
-          joinCode: generateJoinCode(),
-          hostSeatIndex: 0,
-          participants: {
-            create: [
-              {
-                seatIndex: 0,
-                nickname: body.nickname,
-                userId: identity.userId ?? null,
-                guestId: identity.guestId ?? null,
-                isHuman: true,
-                isAi: false,
-                lobbySeenAt: new Date(),
-              },
-            ],
+      const match = await prisma.$transaction(async (tx) => {
+        await releaseOwnStaleSeats(identity, tx);
+        await assertNoActiveOnlineMatch(identity, tx);
+        return tx.match.create({
+          data: {
+            mode: "online",
+            status: "lobby",
+            playerCount: body.playerCount,
+            difficulty: "balanced",
+            seed: randomInt(0x7fffffff),
+            humanName: body.nickname,
+            joinCode: generateJoinCode(),
+            hostSeatIndex: 0,
+            participants: {
+              create: [
+                {
+                  seatIndex: 0,
+                  nickname: body.nickname,
+                  userId: identity.userId ?? null,
+                  guestId: identity.guestId ?? null,
+                  isHuman: true,
+                  isAi: false,
+                  lobbySeenAt: new Date(),
+                },
+              ],
+            },
           },
-        },
-        include: { participants: { orderBy: { seatIndex: "asc" } } },
+          include: { participants: { orderBy: { seatIndex: "asc" } } },
+        });
       });
       res.status(201).json(roomSummary(match));
       return;
@@ -176,17 +185,21 @@ roomsRouter.post("/", async (req, res) => {
 
 roomsRouter.get("/", async (req, res) => {
   requireIdentity(req);
+  const now = Date.now();
   const matches = await prisma.match.findMany({
-    where: { mode: "online", status: "lobby" },
+    where: {
+      mode: "online",
+      status: "lobby",
+      participants: { some: { lobbySeenAt: { gte: lobbyFreshSince(now) } } },
+    },
     orderBy: { startedAt: "asc" },
     take: 50,
     include: { participants: { orderBy: { seatIndex: "asc" } } },
   });
-  const now = Date.now();
   const rooms = [];
   for (const match of matches) {
     const fresh = match.participants.filter((p) => !seatIsStale(p.lobbySeenAt, now));
-    if (fresh.length === 0 || fresh.length >= match.playerCount) continue;
+    if (fresh.length >= match.playerCount) continue;
     rooms.push(roomListItem({ ...match, participants: fresh }));
   }
   res.json({ rooms });
@@ -208,7 +221,8 @@ roomsRouter.post("/join", async (req, res) => {
           select: { id: true },
         });
         if (!located) throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
-        await lockMatchRow(located.id, tx);
+        // Also locks the target room.
+        await releaseOwnStaleSeats(identity, tx, located.id);
         const match = await tx.match.findFirst({
           where: { id: located.id, mode: "online" },
           include: { participants: { orderBy: { seatIndex: "asc" } } },
@@ -286,6 +300,15 @@ roomsRouter.post("/:id/heartbeat", async (req, res) => {
   if (result.status === "missing") throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
   if (result.status === "forbidden") throw new HttpError(403, "無權存取此對局", "MATCH_FORBIDDEN");
   res.json(roomSummary(result.match));
+});
+
+roomsRouter.post("/:id/away", async (req, res) => {
+  const identity = requireIdentity(req);
+  const id = roomIdParam(req);
+  const result = await markLobbyAway(id, identity);
+  if (result.status === "missing") throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
+  if (result.status === "forbidden") throw new HttpError(403, "無權存取此對局", "MATCH_FORBIDDEN");
+  res.status(204).end();
 });
 
 roomsRouter.post("/:id/leave", async (req, res) => {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import { formatApiError } from "../api/errorMessage";
-import { cancelRoom, heartbeatRoom, leaveRoom, type RoomSummary } from "../api/rooms";
+import { cancelRoom, heartbeatRoom, leaveRoom, markRoomAway, type RoomSummary } from "../api/rooms";
 import type { AuthMe } from "../api/types";
 import type { PlayerCount } from "../engine";
 import "./LobbyScreen.css";
@@ -57,6 +57,15 @@ export function LobbyScreen({
 
   const seatsRef = useRef(seats);
   seatsRef.current = seats;
+
+  useEffect(() => {
+    // Also fires on a reload or bfcache entry; the next heartbeat from any tab takes the seat back.
+    function onPageHide() {
+      void markRoomAway(room.id).catch(() => undefined);
+    }
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [room.id]);
 
   useEffect(() => {
     let cancelled = false;
