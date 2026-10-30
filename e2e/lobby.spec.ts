@@ -69,6 +69,12 @@ async function joinListedRoom(page: Page, hostName: string): Promise<void> {
   await expect(page.getByRole("heading", { name: "Online lobby" })).toBeVisible();
 }
 
+/** How long ago the server last saw this seat, or null once it is gone. */
+async function seatAge(matchId: string, nickname: string): Promise<number | null> {
+  const seat = await prisma.matchParticipant.findFirst({ where: { matchId, nickname } });
+  return seat == null ? null : Date.now() - seat.lobbySeenAt.getTime();
+}
+
 /** Answer later heartbeats from the last real payload, so the seat's timestamp stays put. */
 async function holdHeartbeats(page: Page): Promise<() => Promise<void>> {
   let body = "";
@@ -127,39 +133,24 @@ test("a full lobby stays open until both seats acknowledge it", async ({ browser
   await guestContext.close();
 });
 
-test("closing a lobby page keeps the seat until that player goes quiet", async ({ browser }) => {
+test("closing a lobby page releases the seat after a short grace", async ({ browser }) => {
+  test.setTimeout(45_000);
   const hostContext = await browser.newContext();
   const guestContext = await browser.newContext();
   const host = await openSetup(hostContext, "e2e-host");
   const guest = await openSetup(guestContext, "e2e-guest");
+  const room = await createLobby(host, 3);
 
-  const created = host.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname === "/api/rooms" &&
-      response.status() === 201,
-  );
-  await host.getByRole("radio", { name: "3 players" }).check();
-  await host.getByRole("button", { name: "Create room" }).click();
-  const room = (await (await created).json()) as { id: string };
-  await expect(host.getByRole("heading", { name: "Online lobby" })).toBeVisible();
-
-  await guest.getByRole("button", { name: "Refresh" }).click();
-  await guest.getByRole("listitem").filter({ hasText: "e2e-host" }).getByRole("button", { name: "Join" }).click();
+  await joinListedRoom(guest, "e2e-host");
   await expect(guest.getByRole("button", { name: "Leave room" })).toBeVisible();
   await expect(host.getByRole("listitem").filter({ hasText: "e2e-guest" })).toBeVisible();
 
   await guest.close();
-  await host.waitForTimeout(2500);
+  await expect.poll(() => seatAge(room.id, "e2e-guest")).toBeGreaterThan(60_000);
   await expect(host.getByText("2/3 players")).toBeVisible();
   await expect(host.getByRole("listitem").filter({ hasText: "e2e-guest" })).toBeVisible();
 
-  await prisma.matchParticipant.updateMany({
-    where: { matchId: room.id, nickname: "e2e-guest" },
-    data: { lobbySeenAt: new Date(0) },
-  });
-
-  await expect(host.getByText("1/3 players")).toBeVisible();
+  await expect(host.getByText("1/3 players")).toBeVisible({ timeout: 20_000 });
   await expect(host.getByRole("listitem").filter({ hasText: "e2e-guest" })).toHaveCount(0);
   await expect(host.getByRole("heading", { name: "Online lobby" })).toBeVisible();
 
@@ -305,11 +296,15 @@ test("a removed lobby player can return to setup", async ({ browser }) => {
   await guestContext.close();
 });
 
-test("another lobby tab or a restored page keeps the seat", async ({ browser }) => {
-  test.setTimeout(45_000);
+test("another lobby tab, a reload, or a restored page keeps the seat and host role", async ({ browser }) => {
+  test.setTimeout(90_000);
   const context = await browser.newContext();
+  const friendContext = await browser.newContext();
   const first = await openSetup(context, "e2e-host");
   const room = await createLobby(first, 3);
+  const friend = await openSetup(friendContext, "e2e-friend");
+  await joinListedRoom(friend, "e2e-host");
+  await expect(first.getByText("2/3 players")).toBeVisible();
 
   const second = await context.newPage();
   await second.addInitScript(() => {
@@ -319,33 +314,58 @@ test("another lobby tab or a restored page keeps the seat", async ({ browser }) 
   await expect(second.getByRole("heading", { name: "Online lobby" })).toBeVisible();
   await expect(second.getByRole("button", { name: "Cancel room" })).toBeVisible();
 
-  await first.close();
-  await second.waitForTimeout(2500);
-  await expect(second.getByRole("heading", { name: "Online lobby" })).toBeVisible();
-  await expect(second.getByText("You are no longer in this room")).toHaveCount(0);
-  await expect(second.getByRole("button", { name: "Cancel room" })).toBeVisible();
-  expect(await prisma.matchParticipant.findFirst({ where: { matchId: room.id, nickname: "e2e-host" } })).not.toBeNull();
-  await context.close();
+  // Hold the remaining page's heartbeats until the hidden page's away mark lands, so the test
+  // knows the seat was marked away before checking that it comes back.
+  async function hideAndExpectAway(hide: () => Promise<void>): Promise<void> {
+    const release = await holdHeartbeats(second);
+    try {
+      await hide();
+      await expect.poll(() => seatAge(room.id, "e2e-host")).toBeGreaterThan(60_000);
+    } finally {
+      await release();
+    }
+  }
 
-  // Playwright keeps the back-forward cache disabled, so this return is a reload.
-  // The seat still has to be here: leaving the page must not drop it.
-  const backContext = await browser.newContext();
-  const page = await openSetup(backContext, "e2e-back");
-  const restoredRoom = await createLobby(page, 3);
-  await page.evaluate(() => {
-    location.assign("/api/health");
+  // The friend's heartbeat would drop the seat once the grace runs out,
+  // so it only stays if the remaining page takes it back.
+  async function expectHostKeepsSeat(): Promise<void> {
+    await second.waitForTimeout(12_000);
+    await expect(second.getByRole("heading", { name: "Online lobby" })).toBeVisible();
+    await expect(second.getByText("You are no longer in this room")).toHaveCount(0);
+    await expect(second.getByRole("button", { name: "Cancel room" })).toBeVisible();
+    await expect(friend.getByText("2/3 players")).toBeVisible();
+    await expect(friend.getByRole("button", { name: "Leave room" })).toBeVisible();
+    const stored = await prisma.match.findUnique({
+      where: { id: room.id },
+      include: { participants: { orderBy: { seatIndex: "asc" } } },
+    });
+    expect(stored?.hostSeatIndex).toBe(0);
+    expect(stored?.participants.map((participant) => participant.nickname)).toEqual(["e2e-host", "e2e-friend"]);
+  }
+
+  await hideAndExpectAway(() => first.close());
+  await expectHostKeepsSeat();
+
+  await hideAndExpectAway(async () => {
+    await second.reload();
+    await expect(second.getByRole("heading", { name: "Online lobby" })).toBeVisible();
   });
-  await page.waitForURL("**/api/health");
-  await page.evaluate(() => {
+  await expectHostKeepsSeat();
+
+  // Playwright keeps the back-forward cache disabled, so this return is a reload too.
+  await hideAndExpectAway(async () => {
+    await second.evaluate(() => {
+      location.assign("/api/health");
+    });
+    await second.waitForURL("**/api/health");
+  });
+  await second.evaluate(() => {
     history.back();
   });
-  await expect(page.getByRole("heading", { name: "Online lobby" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Cancel room" })).toBeVisible();
-  await expect(page.getByText("You are no longer in this room")).toHaveCount(0);
-  expect(
-    await prisma.matchParticipant.findFirst({ where: { matchId: restoredRoom.id, nickname: "e2e-back" } }),
-  ).not.toBeNull();
-  await backContext.close();
+  await expectHostKeepsSeat();
+
+  await context.close();
+  await friendContext.close();
 });
 
 test("opening the room list keeps a quiet host room", async ({ browser }) => {
