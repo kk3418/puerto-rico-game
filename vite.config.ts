@@ -10,13 +10,15 @@ export default defineConfig({
     },
   },
   server: {
+    port: Number(process.env.VITE_PORT ?? 5173),
+    strictPort: Boolean(process.env.VITE_PORT),
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:3001",
+        target: `http://127.0.0.1:${process.env.VITE_API_PORT ?? "3001"}`,
         changeOrigin: true,
       },
       "/socket.io": {
-        target: "http://127.0.0.1:3001",
+        target: `http://127.0.0.1:${process.env.VITE_API_PORT ?? "3001"}`,
         changeOrigin: true,
         ws: true,
       },

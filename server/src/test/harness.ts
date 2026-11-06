@@ -108,7 +108,15 @@ export async function createGuestMatch(
       seed: input.seed ?? 2024,
     })
     .expect(201);
-  return res.body as { id: string; eventCount: number; seed: number; humanName: string; playToken: string };
+  return res.body as {
+    id: string;
+    eventCount: number;
+    seed: number;
+    humanName: string;
+    playToken: string;
+    joinCode: string | null;
+    hostSeatIndex: number | null;
+  };
 }
 
 export async function recordSoloActions(input: {

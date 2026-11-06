@@ -187,7 +187,8 @@ matchesRouter.post("/", async (req, res) => {
 
 matchesRouter.get("/:id", async (req, res) => {
   const identity = requireIdentity(req);
-  const match = await loadOwnedMatch(matchIdParam(req), identity);
+  const id = matchIdParam(req);
+  const match = await loadOwnedMatch(id, identity);
   res.json(matchSummary(match));
 });
 

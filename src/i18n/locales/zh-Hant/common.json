@@ -57,6 +57,7 @@
   "leaveRoom": "離開房間",
   "cancelRoom": "取消房間",
   "roomClosed": "房間已關閉",
+  "lobbyRemoved": "你已不在這個房間",
   "back": "返回",
   "statusLobby": "等待開局",
   "errors": {
