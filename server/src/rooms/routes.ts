@@ -6,6 +6,9 @@ import { z } from "zod";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, type SessionIdentity } from "../identity";
+import { broadcastMatchAbandoned } from "../live/gameServer";
+import { dropLiveMatch } from "../live/liveMatches";
+import { replayCache } from "../matches/replayCache";
 import { nicknameSchema } from "../validation";
 import {
   heartbeatLobby,
@@ -13,6 +16,7 @@ import {
   lobbyFreshSince,
   lockMatchRow,
   markLobbyAway,
+  releaseOwnRoomsForCreate,
   releaseOwnStaleSeats,
   removeLobbySeats,
   seatIsStale,
@@ -143,10 +147,10 @@ roomsRouter.post("/", async (req, res) => {
   }
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const match = await prisma.$transaction(async (tx) => {
-        await releaseOwnStaleSeats(identity, tx);
+      const { match, abandoned } = await prisma.$transaction(async (tx) => {
+        const released = await releaseOwnRoomsForCreate(identity, tx);
         await assertNoActiveOnlineMatch(identity, tx);
-        return tx.match.create({
+        const match = await tx.match.create({
           data: {
             mode: "online",
             status: "lobby",
@@ -172,7 +176,13 @@ roomsRouter.post("/", async (req, res) => {
           },
           include: { participants: { orderBy: { seatIndex: "asc" } } },
         });
+        return { match, abandoned: released.abandoned };
       });
+      for (const id of abandoned) {
+        dropLiveMatch(id);
+        replayCache.drop(id);
+        broadcastMatchAbandoned(id);
+      }
       res.status(201).json(roomSummary(match));
       return;
     } catch (err) {
