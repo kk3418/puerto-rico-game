@@ -140,6 +140,85 @@ export async function releaseOwnStaleSeats(
   }
 }
 
+export type CreateRoomRelease = { abandoned: string[] };
+
+/**
+ * Clear what would otherwise block this identity from opening a new room.
+ *
+ * A host opening another room has left the old one, so their lobby seat goes even while it is
+ * still fresh, and a match that already started is abandoned for the remaining players.
+ * Everyone else keeps a seat in another host's room: that still returns `ROOM_ALREADY_IN_MATCH`.
+ * Stale seats are released as well, and every touched room is locked in one id-ordered statement,
+ * so concurrent creates cannot deadlock.
+ */
+export async function releaseOwnRoomsForCreate(
+  identity: SessionIdentity,
+  db: Db,
+): Promise<CreateRoomRelease> {
+  const now = Date.now();
+  const held = await db.matchParticipant.findMany({
+    where: {
+      OR: seatsHeldBy(identity),
+      match: { mode: "online", status: { in: ["lobby", "playing"] } },
+    },
+    select: {
+      matchId: true,
+      seatIndex: true,
+      lobbySeenAt: true,
+      match: { select: { hostSeatIndex: true, status: true } },
+    },
+  });
+
+  const hostedRooms = new Set<string>();
+  const staleRooms = new Set<string>();
+  const abandon = new Set<string>();
+  for (const seat of held) {
+    const hosted = seat.seatIndex === seat.match.hostSeatIndex;
+    if (hosted) {
+      hostedRooms.add(seat.matchId);
+      if (seat.match.status === "playing") abandon.add(seat.matchId);
+    }
+    if (seat.match.status === "lobby" && seatIsStale(seat.lobbySeenAt, now)) {
+      staleRooms.add(seat.matchId);
+    }
+  }
+
+  const roomIds = [...new Set([...hostedRooms, ...staleRooms])];
+  if (roomIds.length === 0) return { abandoned: [] };
+  await lockMatchRows(roomIds, db);
+
+  const rooms = await db.match.findMany({
+    where: { id: { in: roomIds }, mode: "online", status: { in: ["lobby", "playing"] } },
+    include: { participants: true },
+  });
+  const abandoned: string[] = [];
+  for (const room of rooms) {
+    if (room.status === "playing") {
+      if (!abandon.has(room.id)) continue;
+      await db.match.update({
+        where: { id: room.id },
+        data: { status: "abandoned", endedAt: new Date(), verified: false },
+      });
+      abandoned.push(room.id);
+      continue;
+    }
+
+    const mine = room.participants.filter((p) => holdsSeat(p, identity));
+    const hostedSeat = mine.some((p) => p.seatIndex === room.hostSeatIndex);
+    // Closing a hosted room clears the seats left behind by players who already left the page.
+    const removable = hostedSeat
+      ? room.participants.filter((p) => holdsSeat(p, identity) || seatIsStale(p.lobbySeenAt, now))
+      : mine.filter((p) => seatIsStale(p.lobbySeenAt, now));
+    if (removable.length === 0) continue;
+    await removeLobbySeats(
+      room,
+      removable.map((p) => p.id),
+      db,
+    );
+  }
+  return { abandoned };
+}
+
 type OwnLobbySeat =
   | { status: "missing" }
   | { status: "forbidden" }
