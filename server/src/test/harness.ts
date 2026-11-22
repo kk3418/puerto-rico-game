@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
-import { PrismaClient } from "@prisma/client";
+import { createHmac, randomUUID } from "node:crypto";
+import { Prisma, PrismaClient } from "@prisma/client";
 import request from "supertest";
 import { HeuristicAgent } from "../../../src/agents/heuristic";
 import {
@@ -16,6 +17,8 @@ import type { MatchEventInput } from "../../../src/api/types";
 import { createApp } from "../app";
 import { prisma } from "../db";
 import { env } from "../env";
+import { clearAllMatchTimers } from "../live/matchRuntime";
+import { clearLiveMatches } from "../live/liveMatches";
 import { replayCache } from "../matches/replayCache";
 
 export type TestAgent = ReturnType<typeof request.agent>;
@@ -68,9 +71,13 @@ export async function prepareIntegrationDb(): Promise<boolean> {
 }
 
 export async function resetIntegrationDb(): Promise<void> {
+  clearAllMatchTimers();
+  clearLiveMatches();
   replayCache.clear();
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
+      "MatchVoteBallot",
+      "MatchVote",
       "MatchEvent",
       "MatchSave",
       "MatchParticipant",
@@ -88,6 +95,49 @@ export async function guestAgent(nickname: string): Promise<TestAgent> {
   const res = await agent.post("/api/auth/guest").send({ nickname }).expect(200);
   if (!res.body.guest?.id) throw new Error("guest session missing id");
   return agent;
+}
+
+function signedSessionCookie(sid: string): string {
+  const signature = createHmac("sha256", env.SESSION_SECRET).update(sid).digest("base64").replace(/=+$/, "");
+  return `s:${sid}.${signature}`;
+}
+
+/**
+ * A logged-in browser session, seeded the same way the OAuth callback would.
+ * Online play requires a real user, so integration tests cannot use guests.
+ */
+export async function userSession(
+  displayName: string,
+): Promise<{ userId: string; cookie: string; agent: TestAgent }> {
+  const user = await prisma.user.create({
+    data: {
+      email: `${displayName}@itest.local`,
+      displayName,
+      accounts: { create: { provider: "google", providerAccountId: `itest-${displayName}` } },
+    },
+  });
+  const sid = randomUUID();
+  const expire = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const sess = {
+    cookie: {
+      path: "/",
+      secure: false,
+      expires: expire.toISOString(),
+      httpOnly: true,
+      sameSite: "lax",
+      originalMaxAge: 30 * 24 * 60 * 60 * 1000 - 1,
+    },
+    userId: user.id,
+  } as unknown as Prisma.InputJsonValue;
+  await prisma.session.create({ data: { sid, sess, expire } });
+  const cookie = `pr.sid=${signedSessionCookie(sid)}`;
+  const agent = testApp();
+  agent.set("Cookie", cookie);
+  return { userId: user.id, cookie, agent };
+}
+
+export async function userAgent(displayName: string): Promise<TestAgent> {
+  return (await userSession(displayName)).agent;
 }
 
 export async function createGuestMatch(

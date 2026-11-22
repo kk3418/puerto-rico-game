@@ -62,6 +62,7 @@ model Match {
   events       MatchEvent[]
   save         MatchSave?
   saveConsents SaveConsent[]
+  votes        MatchVote[]
 
   @@index([status, startedAt])
 }
@@ -86,6 +87,7 @@ model MatchParticipant {
   goodsAndGold Int?
   lobbySeenAt  DateTime  @default(now())
   lobbyReadyAt DateTime?
+  replacedByAiAt DateTime?
 
   match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
   user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -146,4 +148,31 @@ model SaveConsent {
   match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, seatIndex])
+}
+
+model MatchVote {
+  id              String    @id @default(cuid())
+  matchId         String
+  initiatedBySeat Int
+  createdAt       DateTime  @default(now())
+  deadlineAt      DateTime
+  resolvedAt      DateTime?
+  result          String?
+
+  match   Match             @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  ballots MatchVoteBallot[]
+
+  @@index([matchId, resolvedAt])
+  @@index([deadlineAt])
+}
+
+model MatchVoteBallot {
+  voteId    String
+  seatIndex Int
+  choice    String
+  createdAt DateTime @default(now())
+
+  vote MatchVote @relation(fields: [voteId], references: [id], onDelete: Cascade)
+
+  @@id([voteId, seatIndex])
 }

@@ -1,6 +1,6 @@
 import { api } from "./client";
 import type { GameState } from "../engine";
-import type { CreateMatchInput, FinishResult, MatchEventInput, MatchLiveState, MatchSave, MatchSummary, SaveConsentResult, UserStats } from "./types";
+import type { CreateMatchInput, FinishResult, MatchEventInput, MatchLiveState, MatchSave, MatchSummary, OnlineVoteView, UserStats, VoteChoice } from "./types";
 
 export function createMatch(input: CreateMatchInput): Promise<MatchSummary> {
   return api<MatchSummary>("/matches", {
@@ -54,8 +54,23 @@ export function getMatchSave(id: string): Promise<MatchSave> {
   return api<MatchSave>(`/matches/${id}/save`);
 }
 
-export function saveMatchConsent(id: string): Promise<SaveConsentResult> {
-  return api(`/matches/${id}/save-consent`, { method: "POST" });
+export function leaveMatch(id: string): Promise<{ result: "ai" | "abandoned" | "ignored" }> {
+  return api(`/matches/${id}/leave`, { method: "POST" });
+}
+
+export function startEndVote(id: string): Promise<OnlineVoteView> {
+  return api(`/matches/${id}/end-vote`, { method: "POST" });
+}
+
+export function castEndVote(id: string, choice: VoteChoice): Promise<OnlineVoteView> {
+  return api(`/matches/${id}/end-vote/vote`, {
+    method: "POST",
+    body: JSON.stringify({ choice }),
+  });
+}
+
+export function getEndVote(id: string): Promise<{ vote: OnlineVoteView | null }> {
+  return api(`/matches/${id}/end-vote`);
 }
 
 export function getMyMatches(): Promise<{ matches: MatchSummary[] }> {

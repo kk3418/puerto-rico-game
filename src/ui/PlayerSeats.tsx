@@ -93,6 +93,7 @@ export function PlayerSeats({
               {isYou ? t("youSuffix") : ""}
             </strong>
             {playerIndex === governorIndex && <span className="seat-status">{t("governor")}</span>}
+            {!player.isHuman && <span className="seat-status">{t("aiSeat")}</span>}
             {acting && <span className="seat-status">{t("acting")}</span>}
           </button>
         );

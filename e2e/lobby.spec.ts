@@ -1,8 +1,11 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { createHmac, randomUUID } from "node:crypto";
 import { e2eDatabaseUrl } from "./database-url";
 
 const heartbeatRequest = /\/api\/rooms\/[^/]+\/heartbeat$/;
+const E2E_ORIGIN = "http://127.0.0.1:5179";
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 let prisma: PrismaClient;
 
@@ -17,6 +20,8 @@ test.afterAll(async () => {
 test.beforeEach(async () => {
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
+      "MatchVoteBallot",
+      "MatchVote",
       "MatchEvent",
       "MatchSave",
       "MatchParticipant",
@@ -29,14 +34,79 @@ test.beforeEach(async () => {
   `);
 });
 
+/** Sign a session id the way express-session's `cookie-signature` does. */
+function signedSessionCookie(sid: string): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) throw new Error("SESSION_SECRET is required");
+  const signature = createHmac("sha256", secret).update(sid).digest("base64").replace(/=+$/, "");
+  return `s:${sid}.${signature}`;
+}
+
+/**
+ * Put a Google account's session in a browser context. The e2e suite cannot
+ * complete a real OAuth round-trip, so it seeds the same User + Session rows the
+ * Google callback would create.
+ */
+async function signedInContext(context: BrowserContext, displayName: string): Promise<void> {
+  const user = await prisma.user.create({
+    data: {
+      email: `${displayName}@e2e.test`,
+      displayName,
+      accounts: {
+        create: { provider: "google", providerAccountId: `e2e-${displayName}` },
+      },
+    },
+  });
+  const sid = randomUUID();
+  const expire = new Date(Date.now() + SESSION_TTL_MS);
+  const sess = {
+    cookie: {
+      path: "/",
+      secure: false,
+      expires: expire.toISOString(),
+      httpOnly: true,
+      sameSite: "lax",
+      originalMaxAge: SESSION_TTL_MS - 1,
+    },
+    userId: user.id,
+  } as unknown as Prisma.InputJsonValue;
+  await prisma.session.create({ data: { sid, sess, expire } });
+  await context.addCookies([
+    { name: "pr.sid", value: signedSessionCookie(sid), url: E2E_ORIGIN },
+  ]);
+}
+
+async function openSetupPage(
+  context: BrowserContext,
+  nickname: string,
+  keepLastMatch = true,
+): Promise<Page> {
+  const page = await context.newPage();
+  await page.addInitScript(
+    ({ keep }) => {
+      localStorage.setItem("i18nextLng", "en");
+      if (!keep) localStorage.removeItem("pr.lastMatchId");
+    },
+    { keep: keepLastMatch },
+  );
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Nickname" }).fill(nickname);
+  await expect(page.getByRole("button", { name: "Create room" })).toBeEnabled();
+  return page;
+}
+
 async function openSetup(context: BrowserContext, nickname: string): Promise<Page> {
+  await signedInContext(context, nickname);
+  return openSetupPage(context, nickname);
+}
+
+async function openGuestSetup(context: BrowserContext): Promise<Page> {
   const page = await context.newPage();
   await page.addInitScript(() => {
     localStorage.setItem("i18nextLng", "en");
   });
   await page.goto("/");
-  await page.getByRole("textbox", { name: "Nickname" }).fill(nickname);
-  await expect(page.getByRole("button", { name: "Create room" })).toBeEnabled();
+  await expect(page.getByText("Sign in to play online.")).toBeVisible();
   return page;
 }
 
@@ -158,80 +228,233 @@ test("closing a lobby page releases the seat after a short grace", async ({ brow
   await guestContext.close();
 });
 
-test("a playing match rejects leave and still waits on that seat", async ({ browser }) => {
+test("leaving a two-player match abandons it and frees both seats", async ({ browser }) => {
+  test.setTimeout(60_000);
   const hostContext = await browser.newContext();
   const guestContext = await browser.newContext();
   const host = await openSetup(hostContext, "e2e-host");
   const guest = await openSetup(guestContext, "e2e-guest");
-
-  const created = host.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname === "/api/rooms" &&
-      response.status() === 201,
-  );
-  await host.getByRole("button", { name: "Create room" }).click();
-  const room = (await (await created).json()) as { id: string };
-
-  await guest.getByRole("button", { name: "Refresh" }).click();
-  await guest.getByRole("listitem").filter({ hasText: "e2e-host" }).getByRole("button", { name: "Join" }).click();
-
-  await expect(host.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible();
-  await expect(guest.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible();
-
-  const hostActing = host.getByRole("tab", { name: /e2e-host/ }).getByText("Acting", { exact: true });
-  const guestActing = host.getByRole("tab", { name: /e2e-guest/ }).getByText("Acting", { exact: true });
-  await expect(hostActing.or(guestActing)).toBeVisible();
-  const hostIsActor = await hostActing.isVisible();
-  const actor = hostIsActor ? host : guest;
-  const waiter = hostIsActor ? guest : host;
-  const actorContext = hostIsActor ? hostContext : guestContext;
-  const actorName = hostIsActor ? "e2e-host" : "e2e-guest";
-
-  await expect(actor.getByText("Waiting for the other players…")).toHaveCount(0);
-  await expect(waiter.getByText("Waiting for the other players…")).toBeVisible();
-  await expect(waiter.getByRole("button", { name: "Settler", exact: true })).toBeDisabled();
-
-  const leave = await actorContext.request.post(`/api/rooms/${room.id}/leave`);
-  expect(leave.status()).toBe(409);
-  expect(await leave.json()).toMatchObject({ code: "ROOM_NOT_LOBBY" });
-
-  await expect(host.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible();
-  await expect(guest.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible();
-
-  await actor.close();
-
-  const actorTab = waiter.getByRole("tab", { name: new RegExp(actorName) });
-  await expect(waiter.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible();
-  await expect(actorTab).toBeVisible();
-  await expect(actorTab).toContainText("Acting");
-  await expect(waiter.getByText("Waiting for the other players…")).toBeVisible();
-  await expect(waiter.getByRole("button", { name: "Settler", exact: true })).toBeDisabled();
-
-  await waiter.waitForTimeout(2500);
-
-  await expect(waiter.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible();
-  await expect(actorTab).toContainText("Acting");
-  await expect(waiter.getByText("Waiting for the other players…")).toBeVisible();
-  await expect(waiter.getByRole("button", { name: "Settler", exact: true })).toBeDisabled();
-
-  const live = await waiter.request.get(`/api/matches/${room.id}/state`);
-  expect(live.ok()).toBe(true);
-  const body = (await live.json()) as {
-    state: { phase: { type: string }; chooserIndex: number; players: { name: string }[] };
-  };
-  expect(body.state.phase.type).toBe("chooseRole");
-  expect(body.state.players[body.state.chooserIndex]?.name).toBe(actorName);
-
-  const stored = await prisma.match.findUnique({
-    where: { id: room.id },
-    include: { participants: true },
+  const room = await createLobby(host);
+  await joinListedRoom(guest, "e2e-host");
+  await expect(host.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible({
+    timeout: 25_000,
   });
-  expect(stored?.status).toBe("playing");
-  expect(stored?.participants.map((participant) => participant.nickname).sort()).toEqual(["e2e-guest", "e2e-host"]);
+  await expect(guest.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible({
+    timeout: 25_000,
+  });
+
+  await host.getByRole("button", { name: "Leave", exact: true }).click();
+  const leaveDialog = host.getByRole("dialog", { name: "Leave this match?" });
+  await expect(leaveDialog).toBeVisible();
+  await leaveDialog.getByRole("button", { name: "Leave match" }).click();
+  await expect(host.getByRole("button", { name: "Create room" })).toBeVisible();
+
+  const ended = guest.getByRole("dialog", { name: "This match has ended" });
+  await expect(ended).toBeVisible();
+  await ended.getByRole("button", { name: "Leave" }).click();
+  await expect(guest.getByRole("button", { name: "Create room" })).toBeVisible();
+
+  const stored = await prisma.match.findUnique({ where: { id: room.id } });
+  expect(stored?.status).toBe("abandoned");
+
+  // The player who left can immediately open another room.
+  await host.getByRole("button", { name: "Create room" }).click();
+  await expect(host.getByRole("heading", { name: "Online lobby" })).toBeVisible();
+  await expect(host.getByRole("button", { name: "Cancel room" })).toBeVisible();
 
   await hostContext.close();
   await guestContext.close();
+});
+
+test("a seated host can leave an old lobby and retry creating a room", async ({ browser }) => {
+  const hostContext = await browser.newContext();
+  const host = await openSetup(hostContext, "e2e-host");
+  const room = await createLobby(host, 3);
+
+  // A second tab with no last-match pointer lands on setup while the host is still seated.
+  const setup = await openSetupPage(hostContext, "e2e-host", false);
+  await setup.getByRole("button", { name: "Create room" }).click();
+  const blocked = setup.getByRole("dialog", { name: "You are still in an online match" });
+  await expect(blocked).toBeVisible();
+  await blocked.getByRole("button", { name: "Leave old room and continue" }).click();
+  await expect(setup.getByRole("heading", { name: "Online lobby" })).toBeVisible();
+  expect(await prisma.match.findUnique({ where: { id: room.id } })).toBeNull();
+
+  await hostContext.close();
+});
+
+test("a seated guest can leave an old lobby and retry creating a room", async ({ browser }) => {
+  const hostContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const host = await openSetup(hostContext, "e2e-host");
+  const guest = await openSetup(guestContext, "e2e-guest");
+  const room = await createLobby(host, 3);
+  await joinListedRoom(guest, "e2e-host");
+
+  const setup = await openSetupPage(guestContext, "e2e-guest", false);
+  await setup.getByRole("button", { name: "Create room" }).click();
+  const blocked = setup.getByRole("dialog", { name: "You are still in an online match" });
+  await expect(blocked).toBeVisible();
+  await blocked.getByRole("button", { name: "Leave old room and continue" }).click();
+  await expect(setup.getByRole("heading", { name: "Online lobby" })).toBeVisible();
+
+  const old = await prisma.match.findUnique({
+    where: { id: room.id },
+    include: { participants: true },
+  });
+  expect(old?.participants.map((participant) => participant.nickname)).toEqual(["e2e-host"]);
+
+  await hostContext.close();
+  await guestContext.close();
+});
+
+test("a player still in a live match can leave and retry creating a room", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const hostContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const host = await openSetup(hostContext, "e2e-host");
+  const guest = await openSetup(guestContext, "e2e-guest");
+  const room = await createLobby(host);
+  await joinListedRoom(guest, "e2e-host");
+  await expect(host.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible({
+    timeout: 25_000,
+  });
+
+  const setup = await openSetupPage(hostContext, "e2e-host", false);
+  await setup.getByRole("button", { name: "Create room" }).click();
+  const blocked = setup.getByRole("dialog", { name: "You are still in an online match" });
+  await expect(blocked).toBeVisible();
+  await expect(blocked.getByText("still in a match that is in progress")).toBeVisible();
+  await blocked.getByRole("button", { name: "Leave match and continue" }).click();
+  await expect(setup.getByRole("heading", { name: "Online lobby" })).toBeVisible();
+
+  const old = await prisma.match.findUnique({ where: { id: room.id } });
+  expect(old?.status).toBe("abandoned");
+
+  await hostContext.close();
+  await guestContext.close();
+});
+
+test("players can vote to end a live match", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const hostContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const host = await openSetup(hostContext, "e2e-host");
+  const guest = await openSetup(guestContext, "e2e-guest");
+  const room = await createLobby(host);
+  await joinListedRoom(guest, "e2e-host");
+  await expect(host.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible({
+    timeout: 25_000,
+  });
+  await expect(guest.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible({
+    timeout: 25_000,
+  });
+
+  await host.getByRole("button", { name: "End match" }).click();
+  await host
+    .getByRole("dialog", { name: "End this match for everyone?" })
+    .getByRole("button", { name: "Start vote" })
+    .click();
+
+  const guestVote = guest.getByRole("dialog", { name: "End match vote" });
+  await expect(host.getByRole("dialog", { name: "End match vote" })).toBeVisible();
+  await expect(guestVote).toBeVisible();
+  await guestVote.getByRole("button", { name: "Approve" }).click();
+
+  await expect(host.getByRole("heading", { name: /wins/ })).toBeVisible({ timeout: 15_000 });
+  await expect(guest.getByRole("heading", { name: /wins/ })).toBeVisible({ timeout: 15_000 });
+
+  const stored = await prisma.match.findUnique({ where: { id: room.id } });
+  expect(stored?.status).toBe("finished");
+  expect(stored?.endReason).toBe("endedByVote");
+  expect(stored?.verified).toBe(true);
+
+  await hostContext.close();
+  await guestContext.close();
+});
+
+test("one opposing vote keeps a live match going", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const hostContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const host = await openSetup(hostContext, "e2e-host");
+  const guest = await openSetup(guestContext, "e2e-guest");
+  const room = await createLobby(host);
+  await joinListedRoom(guest, "e2e-host");
+  await expect(host.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible({
+    timeout: 25_000,
+  });
+  await expect(guest.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible({
+    timeout: 25_000,
+  });
+
+  await host.getByRole("button", { name: "End match" }).click();
+  await host
+    .getByRole("dialog", { name: "End this match for everyone?" })
+    .getByRole("button", { name: "Start vote" })
+    .click();
+
+  const guestVote = guest.getByRole("dialog", { name: "End match vote" });
+  await expect(guestVote).toBeVisible();
+  await guestVote.getByRole("button", { name: "Oppose" }).click();
+
+  const failed = guest.getByRole("dialog", { name: "The end vote failed" });
+  await expect(failed).toBeVisible();
+  await failed.getByRole("button", { name: "Keep playing" }).click();
+  await expect(guest.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible();
+
+  const stored = await prisma.match.findUnique({ where: { id: room.id } });
+  expect(stored?.status).toBe("playing");
+
+  await hostContext.close();
+  await guestContext.close();
+});
+
+test("an idle player is replaced by AI", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const contexts = await Promise.all([
+    browser.newContext(),
+    browser.newContext(),
+    browser.newContext(),
+  ]);
+  const host = await openSetup(contexts[0]!, "e2e-idle-0");
+  const guest = await openSetup(contexts[1]!, "e2e-idle-1");
+  const third = await openSetup(contexts[2]!, "e2e-idle-2");
+  const room = await createLobby(host, 3);
+  await joinListedRoom(guest, "e2e-idle-0");
+  await joinListedRoom(third, "e2e-idle-0");
+  await expect(host.getByRole("heading", { name: /Choose a role this round/ })).toBeVisible({
+    timeout: 25_000,
+  });
+
+  await expect
+    .poll(
+      async () =>
+        Boolean(await prisma.matchParticipant.findFirst({ where: { matchId: room.id, isAi: true } })),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+
+  const hostSeat = await prisma.matchParticipant.findFirst({
+    where: { matchId: room.id, nickname: "e2e-idle-0" },
+  });
+  if (hostSeat?.isAi) {
+    await expect(host.getByRole("dialog", { name: "You are no longer in this match" })).toBeVisible();
+  } else {
+    await expect(host.getByRole("tab", { name: /AI/ })).toBeVisible();
+  }
+
+  const stored = await prisma.match.findUnique({ where: { id: room.id } });
+  expect(stored?.status).toBe("playing");
+
+  for (const context of contexts) await context.close();
+});
+
+test("online play requires a signed-in account", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await openGuestSetup(context);
+  await expect(page.getByRole("button", { name: "Create room" })).toBeDisabled();
+  await context.close();
 });
 
 test("a removed lobby player can return to setup", async ({ browser }) => {

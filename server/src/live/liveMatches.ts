@@ -74,6 +74,12 @@ async function loadEntry(matchId: string): Promise<LiveEntry> {
   if (!replayed.ok) {
     throw new HttpError(409, "對局紀錄無法重放", "MATCH_REPLAY_FAILED");
   }
+  // Online replay marks every named seat human. Keep the authoritative seat
+  // flags from the database so AI replacements are visible to every client.
+  for (const participant of match.participants) {
+    const player = replayed.state.players[participant.seatIndex];
+    if (player) player.isHuman = participant.isHuman && !participant.isAi;
+  }
   return { state: replayed.state, eventCount: actions.length };
 }
 
@@ -102,16 +108,26 @@ function getLiveEntry(matchId: string): Promise<LiveEntry> {
 export function dropLiveMatch(matchId: string): void {
   entries.delete(matchId);
   pendingLoads.delete(matchId);
+  replayCache.drop(matchId);
 }
 
 export function clearLiveMatches(): void {
   entries.clear();
   pendingLoads.clear();
+  locks.clear();
 }
 
 export async function getLiveState(matchId: string): Promise<{ state: GameState; eventCount: number }> {
   const entry = await getLiveEntry(matchId);
   return { state: entry.state, eventCount: entry.eventCount };
+}
+
+/** Mark a seat as AI in the cached live state, and make future replays read the DB flags. */
+export async function markLiveSeatAi(matchId: string, seatIndex: number): Promise<void> {
+  const entry = await getLiveEntry(matchId);
+  const player = entry.state.players[seatIndex];
+  if (player) player.isHuman = false;
+  replayCache.drop(matchId);
 }
 
 export type LiveActionResult = {
@@ -123,12 +139,101 @@ export type LiveActionResult = {
   finish?: FinishResult;
 };
 
+/**
+ * Apply an action for a seat. The caller must already hold `withMatchLock` for
+ * this match. Authorization is the caller's responsibility.
+ */
+export async function applySeatActionLocked(input: {
+  matchId: string;
+  seatIndex: number;
+  action: Action;
+  actorUserId: string | null;
+}): Promise<LiveActionResult> {
+  const match = await prisma.match.findUnique({
+    where: { id: input.matchId },
+    include: { participants: true },
+  });
+  if (!match || match.mode !== "online") {
+    throw new HttpError(404, "找不到對局", "MATCH_NOT_FOUND");
+  }
+  if (match.status !== "playing") {
+    throw new HttpError(409, "對局已結束，無法再寫入", "MATCH_NOT_PLAYING");
+  }
+  const openVote = await prisma.matchVote.findFirst({
+    where: { matchId: input.matchId, resolvedAt: null },
+    select: { id: true },
+  });
+  if (openVote) {
+    throw new HttpError(409, "投票進行中，暫時無法行動", "VOTE_IN_PROGRESS");
+  }
+  const seat = match.participants.find((participant) => participant.seatIndex === input.seatIndex);
+  if (!seat) {
+    throw new HttpError(403, "無權存取此對局", "MATCH_FORBIDDEN");
+  }
+
+  const entry = await getLiveEntry(input.matchId);
+  const actorSeatIndex = getActorIndex(entry.state);
+  if (actorSeatIndex === null || actorSeatIndex !== seat.seatIndex) {
+    throw new HttpError(409, "尚未輪到你行動", "NOT_YOUR_TURN");
+  }
+  const legal = getLegalActions(entry.state);
+  if (!isLegalAction(entry.state, input.action, legal)) {
+    throw new HttpError(400, "此行動目前不合法", "ILLEGAL_ACTION");
+  }
+  const meta = describeActionContext(entry.state);
+  if (!meta) {
+    throw new HttpError(409, "對局狀態無法對應行動者", "EVENT_NO_ACTOR");
+  }
+
+  const nextState = applyAction(entry.state, input.action);
+  const seq = entry.eventCount + 1;
+  try {
+    await prisma.matchEvent.create({
+      data: {
+        matchId: input.matchId,
+        seq,
+        round: meta.round,
+        phaseType: meta.phaseType,
+        activeRole: meta.activeRole,
+        actorSeatIndex: meta.actorSeatIndex,
+        actorUserId: input.actorUserId,
+        action: input.action as Prisma.InputJsonValue,
+      },
+    });
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err && err.code === "P2002") {
+      throw new HttpError(409, "事件序號衝突，請重試", "EVENT_SEQ_CONFLICT");
+    }
+    throw err;
+  }
+
+  entry.state = nextState;
+  entry.eventCount = seq;
+  replayCache.write(input.matchId, seq, nextState);
+
+  const result: LiveActionResult = {
+    matchId: input.matchId,
+    state: nextState,
+    legalActions: getLegalActions(nextState),
+    eventCount: seq,
+    gameOver: nextState.gameOver,
+  };
+  if (nextState.gameOver) {
+    result.finish = await finishMatch(input.matchId);
+    dropLiveMatch(input.matchId);
+  }
+  return result;
+}
+
 export async function applyLiveAction(input: {
   matchId: string;
   identity: SessionIdentity;
   action: Action;
 }): Promise<LiveActionResult> {
   return withMatchLock(input.matchId, async () => {
+    if (!input.identity.userId) {
+      throw new HttpError(401, "請先登入", "LOGIN_REQUIRED");
+    }
     const match = await prisma.match.findUnique({
       where: { id: input.matchId },
       include: { participants: true },
@@ -139,64 +244,15 @@ export async function applyLiveAction(input: {
     if (match.status !== "playing") {
       throw new HttpError(409, "對局已結束，無法再寫入", "MATCH_NOT_PLAYING");
     }
-    const seat =
-      match.participants.find((p) => input.identity.userId && p.userId === input.identity.userId) ??
-      match.participants.find((p) => input.identity.guestId && p.guestId === input.identity.guestId);
-    if (!seat) {
+    const seat = match.participants.find((participant) => participant.userId === input.identity.userId);
+    if (!seat || !seat.isHuman || seat.isAi) {
       throw new HttpError(403, "無權存取此對局", "MATCH_FORBIDDEN");
     }
-
-    const entry = await getLiveEntry(input.matchId);
-    const actorSeatIndex = getActorIndex(entry.state);
-    if (actorSeatIndex === null || actorSeatIndex !== seat.seatIndex) {
-      throw new HttpError(409, "尚未輪到你行動", "NOT_YOUR_TURN");
-    }
-    const legal = getLegalActions(entry.state);
-    if (!isLegalAction(entry.state, input.action, legal)) {
-      throw new HttpError(400, "此行動目前不合法", "ILLEGAL_ACTION");
-    }
-    const meta = describeActionContext(entry.state);
-    if (!meta) {
-      throw new HttpError(409, "對局狀態無法對應行動者", "EVENT_NO_ACTOR");
-    }
-
-    const nextState = applyAction(entry.state, input.action);
-    const seq = entry.eventCount + 1;
-    try {
-      await prisma.matchEvent.create({
-        data: {
-          matchId: input.matchId,
-          seq,
-          round: meta.round,
-          phaseType: meta.phaseType,
-          activeRole: meta.activeRole,
-          actorSeatIndex: meta.actorSeatIndex,
-          actorUserId: seat.userId ?? null,
-          action: input.action as Prisma.InputJsonValue,
-        },
-      });
-    } catch (err) {
-      if (err && typeof err === "object" && "code" in err && err.code === "P2002") {
-        throw new HttpError(409, "事件序號衝突，請重試", "EVENT_SEQ_CONFLICT");
-      }
-      throw err;
-    }
-
-    entry.state = nextState;
-    entry.eventCount = seq;
-    replayCache.write(input.matchId, seq, nextState);
-
-    const result: LiveActionResult = {
+    return applySeatActionLocked({
       matchId: input.matchId,
-      state: nextState,
-      legalActions: getLegalActions(nextState),
-      eventCount: seq,
-      gameOver: nextState.gameOver,
-    };
-    if (nextState.gameOver) {
-      result.finish = await finishMatch(input.matchId);
-      dropLiveMatch(input.matchId);
-    }
-    return result;
+      seatIndex: seat.seatIndex,
+      action: input.action,
+      actorUserId: seat.userId,
+    });
   });
 }

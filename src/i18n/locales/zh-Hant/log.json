@@ -24,6 +24,7 @@
   "endReason": {
     "vpExhausted": "勝利分籌碼用盡",
     "colonistSupplyEmpty": "殖民者供應耗盡，無法補滿殖民船",
-    "cityFull": "{{player}}的城市已滿"
+    "cityFull": "{{player}}的城市已滿",
+    "endedByVote": "玩家投票結束對局"
   }
 }

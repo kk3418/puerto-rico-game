@@ -58,6 +58,7 @@ export type MatchSummary = {
     guestId: string | null;
     isHuman: boolean;
     isAi: boolean;
+    replacedByAiAt?: string | null;
     scores: ParticipantScore | null;
   }>;
 };
@@ -86,7 +87,10 @@ export type MatchEventInput = {
 
 export type MatchLiveState = MatchSummary & {
   state: GameState;
-  playToken: string;
+  playToken?: string;
+  legalActions?: Action[];
+  seatIndex?: number;
+  vote?: OnlineVoteView | null;
 };
 
 export type MatchSave = {
@@ -104,12 +108,21 @@ export type CreateMatchInput = {
   seed?: number;
 };
 
-export type SaveConsentResult = {
+export type VoteChoice = "approve" | "oppose";
+
+export type OnlineVoteView = {
+  id: string;
   matchId: string;
-  seatIndex: number;
-  consented: number;
-  required: number;
-  complete: boolean;
+  status: "open" | "passed" | "failed" | "abandoned";
+  initiatedBySeat: number;
+  createdAt: string;
+  deadlineAt: string;
+  resolvedAt: string | null;
+  result: "passed" | "failed" | "abandoned" | null;
+  eligibleSeats: number[];
+  ballots: Array<{ seatIndex: number; choice: VoteChoice }>;
+  approve: number;
+  oppose: number;
 };
 
 /** Online socket payloads. `state` is redacted server-side (no deck contents or rng). */
@@ -119,6 +132,19 @@ export type OnlineStatePayload = {
   legalActions: Action[];
   eventCount: number;
   seatIndex?: number;
+  vote?: OnlineVoteView | null;
+};
+
+export type OnlineVotePayload = {
+  matchId: string;
+  vote: OnlineVoteView;
+};
+
+export type OnlineSeatPayload = {
+  matchId: string;
+  seatIndex: number;
+  replacedByAi: true;
+  reason: "leave" | "idle";
 };
 
 export type OnlineOverPayload = {

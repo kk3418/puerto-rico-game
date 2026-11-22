@@ -1,6 +1,5 @@
-import { Prisma } from "@prisma/client";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { applyAction, createInitialState, getLegalActions } from "../../src/engine";
+import { createInitialState } from "../../src/engine";
 import { findOrCreateUser } from "./auth/accounts";
 import { prisma } from "./db";
 import { describeActionContext } from "./matches/replay";
@@ -15,6 +14,7 @@ import {
   resetIntegrationDb,
   secondLegalAction,
   testApp,
+  userSession,
 } from "./test/harness";
 
 const ready = await prepareIntegrationDb();
@@ -198,115 +198,50 @@ describe.skipIf(!ready)("HTTP integration", () => {
     expect(stats?.bestScore).toBe(humanTotal);
   }, 20_000);
 
-  it("hides the seed off solo and withholds saves that still need consent", async () => {
-    const agent = await guestAgent("__it__public");
-    const match = await createGuestMatch(agent, { nickname: "__it__public", seed: 11 });
+  it("keeps solo saves and rejects online saves", async () => {
+    const guest = await guestAgent("__it__public");
+    const match = await createGuestMatch(guest, { nickname: "__it__public", seed: 11 });
     expect(match.seed).toBe(11);
     expect(match.playToken).toBeTruthy();
     expect(match.joinCode).toBeNull();
     expect(match.hostSeatIndex).toBeNull();
 
-    await agent
+    await guest
       .put(`/api/matches/${match.id}/save`)
       .send({ state: { round: 1 }, schemaVersion: "1.0" })
       .expect(200);
-    const soloSave = await agent.get(`/api/matches/${match.id}/save`).expect(200);
+    const soloSave = await guest.get(`/api/matches/${match.id}/save`).expect(200);
     expect(soloSave.body.consentRequired).toBe(false);
     expect(soloSave.body.state).toEqual({ round: 1 });
 
+    const user = await userSession("__it__online");
     await prisma.match.update({ where: { id: match.id }, data: { mode: "online" } });
-    const listed = await agent.get(`/api/matches/${match.id}`).expect(200);
+    await prisma.matchParticipant.updateMany({
+      where: { matchId: match.id },
+      data: { userId: user.userId, guestId: null },
+    });
+
+    const listed = await user.agent.get(`/api/matches/${match.id}`).expect(200);
     expect(listed.body.seed).toBeNull();
     expect(listed.body.playToken).toBeUndefined();
     expect(listed.body.joinCode).toBeNull();
     expect(listed.body.hostSeatIndex).toBe(0);
 
-    const writeBlocked = await agent
+    const writeBlocked = await user.agent
       .put(`/api/matches/${match.id}/save`)
       .send({ state: { round: 2 }, schemaVersion: "1.0" })
-      .expect(403);
-    expect(writeBlocked.body.code).toBe("SAVE_CONSENT_REQUIRED");
+      .expect(409);
+    expect(writeBlocked.body.code).toBe("ONLINE_SAVE_UNSUPPORTED");
 
-    const blocked = await agent.get(`/api/matches/${match.id}/save`).expect(403);
-    expect(blocked.body.code).toBe("SAVE_CONSENT_REQUIRED");
-    expect(blocked.body.error).toMatch(/同意/);
+    const blocked = await user.agent.get(`/api/matches/${match.id}/save`).expect(409);
+    expect(blocked.body.code).toBe("ONLINE_SAVE_UNSUPPORTED");
   });
 
-  it("writes an online save only after every human seat consents", async () => {
-    const host = await guestAgent("__it__host");
-    const guest = await guestAgent("__it__guest");
-    const hostGuestId = (await host.get("/api/auth/me").expect(200)).body.guest.id as string;
-    const guestGuestId = (await guest.get("/api/auth/me").expect(200)).body.guest.id as string;
-    const match = await prisma.match.create({
-      data: {
-        mode: "online",
-        playerCount: 3,
-        difficulty: "balanced",
-        seed: 31,
-        humanName: "__it__host",
-        participants: {
-          create: [
-            { seatIndex: 0, nickname: "__it__host", guestId: hostGuestId, isHuman: true, isAi: false },
-            { seatIndex: 1, nickname: "__it__guest", guestId: guestGuestId, isHuman: true, isAi: false },
-            { seatIndex: 2, nickname: "AI 2", isHuman: false, isAi: true },
-          ],
-        },
-      },
-    });
-
-    const outsider = await guestAgent("__it__outsider");
-    await outsider.post(`/api/matches/${match.id}/save-consent`).expect(403);
-
-    const start = createInitialState({
-      playerCount: 3,
-      difficulty: "balanced",
-      seed: 31,
-      humanName: "__it__host",
-      seatNames: ["__it__host", "__it__guest", "AI 2"],
-    });
-    const meta = describeActionContext(start);
-    expect(meta).not.toBeNull();
-    const action = getLegalActions(start)[0];
-    if (!action) throw new Error("no legal opening action");
-    await prisma.matchEvent.create({
-      data: {
-        matchId: match.id,
-        seq: 1,
-        round: meta!.round,
-        phaseType: meta!.phaseType,
-        activeRole: meta!.activeRole,
-        actorSeatIndex: meta!.actorSeatIndex,
-        action: action as Prisma.InputJsonValue,
-      },
-    });
-    const expectedState = JSON.parse(JSON.stringify(applyAction(start, action)));
-
-    const first = await host.post(`/api/matches/${match.id}/save-consent`).expect(200);
-    expect(first.body).toMatchObject({ seatIndex: 0, consented: 1, required: 2, complete: false });
-    expect(await prisma.matchSave.findUnique({ where: { matchId: match.id } })).toBeNull();
-
-    const blocked = await guest.get(`/api/matches/${match.id}/save`).expect(403);
-    expect(blocked.body.code).toBe("SAVE_CONSENT_REQUIRED");
-
-    await host.post(`/api/matches/${match.id}/save-consent`).expect(200);
-    expect(await prisma.saveConsent.count({ where: { matchId: match.id } })).toBe(1);
-
-    const second = await guest.post(`/api/matches/${match.id}/save-consent`).expect(200);
-    expect(second.body).toMatchObject({ seatIndex: 1, consented: 2, required: 2, complete: true });
-
-    const save = await prisma.matchSave.findUnique({ where: { matchId: match.id } });
-    expect(save?.consentRequired).toBe(true);
-    expect(save?.schemaVersion).toBe("1.0");
-    expect(save?.stateJson).toEqual(expectedState);
-
-    const readable = await guest.get(`/api/matches/${match.id}/save`).expect(200);
-    expect(readable.body.consentRequired).toBe(true);
-    expect(readable.body.state.plantationDeck).toEqual([]);
-    expect(readable.body.state.plantationDeckCount).toBe(expectedState.plantationDeck.length);
-    expect(readable.body.state.plantationDiscard).toEqual([]);
-    expect(readable.body.state.plantationDiscardCount).toBe(expectedState.plantationDiscard.length);
-    expect("rng" in readable.body.state).toBe(false);
-    expect(readable.body.state.players).toEqual(expectedState.players);
-    expect(readable.body.state.round).toBe(expectedState.round);
+  it("requires a signed-in user for online matches", async () => {
+    const guest = await guestAgent("__it__guest-online");
+    const match = await createGuestMatch(guest, { nickname: "__it__guest-online", seed: 12 });
+    await prisma.match.update({ where: { id: match.id }, data: { mode: "online" } });
+    const denied = await guest.get(`/api/matches/${match.id}`).expect(401);
+    expect(denied.body.code).toBe("LOGIN_REQUIRED");
   });
 });

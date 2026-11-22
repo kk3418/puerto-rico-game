@@ -10,6 +10,11 @@ process.env.CLIENT_ORIGIN = "http://127.0.0.1:5179";
 process.env.NODE_ENV = "development";
 process.env.VITE_PORT = "5179";
 process.env.VITE_API_PORT = "3099";
+// Keep the real defaults in production; the browser suite needs to observe
+// timers without waiting a full minute.
+process.env.ONLINE_IDLE_MS = "10000";
+process.env.ONLINE_AI_DELAY_MS = "300";
+process.env.ONLINE_VOTE_MS = "5000";
 
 const adminUrl = new URL(databaseUrl);
 adminUrl.searchParams.delete("schema");

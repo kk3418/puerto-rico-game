@@ -9,14 +9,14 @@ You plant, build, produce goods, and ship them out. The goal is to have the most
 ## Features
 
 - Solo: 3 / 4 / 5 player games (you + the rest as AI), with balanced or aggressive AI styles
-- Online: 2 / 3 / 4 / 5 all-human tables; host creates a room with a join code, or join from the open-room list; the match starts when seats fill
+- Online: 2 / 3 / 4 / 5 player tables; everyone signs in with Google or GitHub; host creates a room with a join code, or join from the open-room list; the match starts when seats fill
 - Online play: the server runs `applyAction` and broadcasts state (hidden deck / RNG never leave the server); auth reuses the cookie session
 - Role rounds: Settler, Mayor, Builder, Craftsman, Trader, Captain, Prospector
 - Building effects, colonist placement, ships and warehouses, end-game scoring
 - Board hints; UI in Traditional Chinese and English
 - Start as a guest with a nickname; optionally sign in with Google or GitHub to view your own stats
 - Match events are written to the database; the server replays the engine at finish before recording the score
-- Solo save / load; online saves require consent from every human seat before a `MatchSave` is written
+- Solo save / load; online matches do not use saves. Any player can start a one-minute end vote, and a player who leaves or idles out has their seat taken over by AI
 
 End-game conditions match the original: the VP chip supply is exhausted, colonists cannot refill the colonist ship, or any player's city is full.
 
@@ -89,7 +89,7 @@ src/
   data/       Building definitions
 server/
   prisma/     Postgres schema and migrations
-  src/        Express: auth, matches, rooms, save consent
+  src/        Express: auth, matches, rooms, live online rules
   src/live/   Socket.IO: authoritative GameState, redaction, broadcast
 ```
 
@@ -105,7 +105,7 @@ The current AI is heuristic scoring (balanced mode sometimes picks a second-best
 
 ## Extensibility (already reserved)
 
-Human online play is in place (rooms, Socket.IO, server-authoritative state). LLM opponents and scale work are still ahead; the reserved interfaces are:
+Human online play is in place (rooms, Socket.IO, server-authoritative state, end votes, and AI takeover for seats that leave or idle). LLM opponents and scale work are still ahead; the reserved interfaces are:
 
 1. **Engine has zero UI dependency** — `src/engine/` is pure TypeScript: no React, no `window` / DOM. The only state-change entry is `applyAction` (same engine for solo and online).
 2. **`GameState` / `Action` are JSON-serializable** — plain data only, so they round-trip through `JSON.stringify`; online play syncs and replays on that.
@@ -143,11 +143,11 @@ An LLM and the heuristic do the same job: given a state, pick one legal action. 
 | Phase | Scope | Status |
 | --- | --- | --- |
 | Phase 1 | SPA solo + Express / Prisma accounts and records; finish by replaying `seed + events` | Done |
-| Phase 2 | Rooms (join code + open list), Socket.IO, server-authoritative play, all-human tables (2–5), save consent | Done |
+| Phase 2 | Rooms (join code + open list), Socket.IO, server-authoritative play, sign-in, end votes, AI takeover | Done |
 | Phase 3 | `LlmAgent`, Discord OAuth | Later |
 | Phase 4 | Connection pool, event batching, idle room memory caps; Redis only if needed | Later |
 
-Solo vs AI still uses the local engine; online tables are all-human for now (no AI mix).
+Solo vs AI still uses the local engine. Online tables start with humans only; if a player leaves or idles, AI takes over that seat until the match ends or only one human remains.
 
 ## Stack
 

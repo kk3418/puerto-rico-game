@@ -9,8 +9,16 @@ import { HttpError } from "../errors";
 import type { SessionIdentity } from "../identity";
 import { isAction } from "../matches/replay";
 import { sessionMiddleware } from "../session";
+import {
+  broadcastMatchOver,
+  broadcastMatchState,
+  roomName,
+  setGameIo,
+} from "./liveBroadcast";
 import { applyLiveAction, getLiveState } from "./liveMatches";
+import { ensureRuntime, getOpenVoteView } from "./matchRuntime";
 import { redactStateForClient, type RedactedGameState } from "./redact";
+import type { VoteView } from "./types";
 
 type SessionRequest = IncomingMessage & { session?: Session & SessionData };
 
@@ -19,13 +27,8 @@ export type LiveStateView = {
   state: RedactedGameState;
   legalActions: Action[];
   eventCount: number;
+  vote: VoteView | null;
 };
-
-function roomName(matchId: string): string {
-  return `match:${matchId}`;
-}
-
-let gameIo: Server | null = null;
 
 function emitGameError(socket: Socket, err: unknown): void {
   if (err instanceof HttpError) {
@@ -59,9 +62,11 @@ async function seatFor(matchId: string, identity: SessionIdentity) {
   if (match.status !== "playing") {
     throw new HttpError(409, "對局已結束，無法再寫入", "MATCH_NOT_PLAYING");
   }
-  const seat =
-    match.participants.find((p) => identity.userId && p.userId === identity.userId) ??
-    match.participants.find((p) => identity.guestId && p.guestId === identity.guestId);
+  const seat = identity.userId
+    ? match.participants.find(
+        (participant) => participant.userId === identity.userId && participant.isHuman && !participant.isAi,
+      )
+    : undefined;
   if (!seat) {
     throw new HttpError(403, "無權存取此對局", "MATCH_FORBIDDEN");
   }
@@ -69,17 +74,18 @@ async function seatFor(matchId: string, identity: SessionIdentity) {
 }
 
 async function liveView(matchId: string): Promise<LiveStateView> {
-  const live = await getLiveState(matchId);
+  const [live, vote] = await Promise.all([getLiveState(matchId), getOpenVoteView(matchId)]);
   return {
     matchId,
     state: redactStateForClient(live.state),
     legalActions: getLegalActions(live.state),
     eventCount: live.eventCount,
+    vote,
   };
 }
 
 export function broadcastMatchAbandoned(matchId: string): void {
-  gameIo?.to(roomName(matchId)).emit("game:over", { matchId, status: "abandoned" });
+  broadcastMatchOver(matchId, { matchId, status: "abandoned" });
 }
 
 export function attachGameServer(server: HttpServer): Server {
@@ -94,16 +100,13 @@ export function attachGameServer(server: HttpServer): Server {
   io.use((socket, next) => {
     const session = (socket.request as SessionRequest).session;
     const userId = session?.userId;
-    const guestId = session?.guestId;
-    if (!userId && !guestId) {
-      const err = new Error("AUTH_REQUIRED") as Error & { data?: { code: string } };
-      err.data = { code: "AUTH_REQUIRED" };
+    if (!userId) {
+      const err = new Error("LOGIN_REQUIRED") as Error & { data?: { code: string } };
+      err.data = { code: "LOGIN_REQUIRED" };
       next(err);
       return;
     }
-    const identity: SessionIdentity = {};
-    if (userId) identity.userId = userId;
-    if (guestId) identity.guestId = guestId;
+    const identity: SessionIdentity = { userId };
     socket.data.identity = identity;
     next();
   });
@@ -115,6 +118,7 @@ export function attachGameServer(server: HttpServer): Server {
       try {
         const matchId = payloadMatchId(payload);
         const seat = await seatFor(matchId, identity);
+        await ensureRuntime(matchId);
         await socket.join(roomName(matchId));
         const view = await liveView(matchId);
         socket.emit("game:state", { ...view, seatIndex: seat.seatIndex });
@@ -132,26 +136,27 @@ export function attachGameServer(server: HttpServer): Server {
         }
         const result = await applyLiveAction({ matchId, identity, action });
         await socket.join(roomName(matchId));
-        io.to(roomName(matchId)).emit("game:state", {
-          matchId,
+        broadcastMatchState(matchId, {
           state: redactStateForClient(result.state),
           legalActions: result.legalActions,
           eventCount: result.eventCount,
+          vote: null,
         });
         if (result.finish) {
-          io.to(roomName(matchId)).emit("game:over", {
+          broadcastMatchOver(matchId, {
             matchId,
             status: "finished",
             scores: result.finish.scores,
             endReason: result.finish.endReason,
           });
         }
+        await ensureRuntime(matchId);
       } catch (err) {
         emitGameError(socket, err);
       }
     });
   });
 
-  gameIo = io;
+  setGameIo(io);
   return io;
 }

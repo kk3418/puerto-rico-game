@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { prisma } from "../db";
 import {
   createGuestMatch,
-  guestAgent,
+  userAgent,
   prepareIntegrationDb,
   resetIntegrationDb,
   testApp,
@@ -23,7 +23,7 @@ describe.skipIf(!ready)("rooms API", () => {
   it("requires a session and creates a lobby room listed until it fills", async () => {
     await testApp().post("/api/rooms").send({ nickname: "__it__anon", playerCount: 3 }).expect(401);
 
-    const host = await guestAgent("__it__host");
+    const host = await userAgent("__it__host");
     const created = await host.post("/api/rooms").send({ nickname: "__it__host", playerCount: 3 }).expect(201);
     expect(created.body.status).toBe("lobby");
     expect(created.body.joinCode).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/);
@@ -50,10 +50,10 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("joins by code or id, rejects duplicate identities, and starts only after every seat acknowledges", async () => {
-    const host = await guestAgent("__it__h2");
+    const host = await userAgent("__it__h2");
     const created = await host.post("/api/rooms").send({ nickname: "__it__h2", playerCount: 3 }).expect(201);
 
-    const missing = await guestAgent("__it__nobody");
+    const missing = await userAgent("__it__nobody");
     const notFound = await missing
       .post("/api/rooms/join")
       .send({ nickname: "__it__nobody", joinCode: "ZZZZZZ" })
@@ -66,7 +66,7 @@ describe.skipIf(!ready)("rooms API", () => {
       .expect(409);
     expect(dup.body.code).toBe("ROOM_ALREADY_IN_MATCH");
 
-    const g1 = await guestAgent("__it__g1");
+    const g1 = await userAgent("__it__g1");
     const joined = await g1
       .post("/api/rooms/join")
       .send({ nickname: "__it__g1", joinCode: created.body.joinCode.toLowerCase() })
@@ -79,7 +79,7 @@ describe.skipIf(!ready)("rooms API", () => {
     const elsewhere = await g1.post("/api/rooms").send({ nickname: "__it__g1", playerCount: 5 }).expect(409);
     expect(elsewhere.body.code).toBe("ROOM_ALREADY_IN_MATCH");
 
-    const g2 = await guestAgent("__it__g2");
+    const g2 = await userAgent("__it__g2");
     const filled = await g2
       .post("/api/rooms/join")
       .send({ nickname: "__it__g2", roomId: created.body.id })
@@ -120,7 +120,7 @@ describe.skipIf(!ready)("rooms API", () => {
     const list = await host.get("/api/rooms").expect(200);
     expect(list.body.rooms).toHaveLength(0);
 
-    const late = await guestAgent("__it__late");
+    const late = await userAgent("__it__late");
     const tooLate = await late
       .post("/api/rooms/join")
       .send({ nickname: "__it__late", joinCode: created.body.joinCode })
@@ -141,14 +141,14 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("leaves seats, reassigns the host to the lowest remaining seat, and deletes empty rooms", async () => {
-    const host = await guestAgent("__it__lh");
+    const host = await userAgent("__it__lh");
     const room = await host.post("/api/rooms").send({ nickname: "__it__lh", playerCount: 4 }).expect(201);
-    const g1 = await guestAgent("__it__l1");
-    const g2 = await guestAgent("__it__l2");
+    const g1 = await userAgent("__it__l1");
+    const g2 = await userAgent("__it__l2");
     await g1.post("/api/rooms/join").send({ nickname: "__it__l1", joinCode: room.body.joinCode }).expect(200);
     await g2.post("/api/rooms/join").send({ nickname: "__it__l2", roomId: room.body.id }).expect(200);
 
-    const stranger = await guestAgent("__it__ls");
+    const stranger = await userAgent("__it__ls");
     const notJoined = await stranger.post(`/api/rooms/${room.body.id}/leave`).expect(409);
     expect(notJoined.body.code).toBe("ROOM_NOT_JOINED");
 
@@ -181,9 +181,9 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("lets only the host cancel a lobby room", async () => {
-    const host = await guestAgent("__it__ch");
+    const host = await userAgent("__it__ch");
     const room = await host.post("/api/rooms").send({ nickname: "__it__ch", playerCount: 3 }).expect(201);
-    const g1 = await guestAgent("__it__c1");
+    const g1 = await userAgent("__it__c1");
     await g1.post("/api/rooms/join").send({ nickname: "__it__c1", joinCode: room.body.joinCode }).expect(200);
 
     const forbidden = await g1.post(`/api/rooms/${room.body.id}/cancel`).expect(403);
@@ -204,13 +204,13 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("does not auto-start when a seated player has left the page", async () => {
-    const host = await guestAgent("__it__ah");
+    const host = await userAgent("__it__ah");
     const room = await host.post("/api/rooms").send({ nickname: "__it__ah", playerCount: 3 }).expect(201);
-    const gone = await guestAgent("__it__ag");
+    const gone = await userAgent("__it__ag");
     await gone.post("/api/rooms/join").send({ nickname: "__it__ag", joinCode: room.body.joinCode }).expect(200);
     await gone.post(`/api/rooms/${room.body.id}/leave`).expect(200);
 
-    const third = await guestAgent("__it__at");
+    const third = await userAgent("__it__at");
     const joined = await third
       .post("/api/rooms/join")
       .send({ nickname: "__it__at", joinCode: room.body.joinCode })
@@ -224,16 +224,16 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("drops a lobby seat that stopped checking in before the room can fill", async () => {
-    const host = await guestAgent("__it__sh");
+    const host = await userAgent("__it__sh");
     const room = await host.post("/api/rooms").send({ nickname: "__it__sh", playerCount: 3 }).expect(201);
-    const gone = await guestAgent("__it__sg");
+    const gone = await userAgent("__it__sg");
     await gone.post("/api/rooms/join").send({ nickname: "__it__sg", joinCode: room.body.joinCode }).expect(200);
     await prisma.matchParticipant.updateMany({
       where: { matchId: room.body.id, nickname: "__it__sg" },
       data: { lobbySeenAt: new Date(0) },
     });
 
-    const third = await guestAgent("__it__st");
+    const third = await userAgent("__it__st");
     const joined = await third
       .post("/api/rooms/join")
       .send({ nickname: "__it__st", roomId: room.body.id })
@@ -246,10 +246,10 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("does not start a full room when a seat leaves before acknowledging", async () => {
-    const host = await guestAgent("__it__rh");
+    const host = await userAgent("__it__rh");
     const room = await host.post("/api/rooms").send({ nickname: "__it__rh", playerCount: 3 }).expect(201);
-    const gone = await guestAgent("__it__rg");
-    const stay = await guestAgent("__it__rs");
+    const gone = await userAgent("__it__rg");
+    const stay = await userAgent("__it__rs");
     await gone.post("/api/rooms/join").send({ nickname: "__it__rg", joinCode: room.body.joinCode }).expect(200);
     const filled = await stay
       .post("/api/rooms/join")
@@ -272,10 +272,10 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("does not start when a full-room seat stopped checking in", async () => {
-    const host = await guestAgent("__it__fh");
+    const host = await userAgent("__it__fh");
     const room = await host.post("/api/rooms").send({ nickname: "__it__fh", playerCount: 3 }).expect(201);
-    const gone = await guestAgent("__it__fg");
-    const stay = await guestAgent("__it__fs");
+    const gone = await userAgent("__it__fg");
+    const stay = await userAgent("__it__fs");
     await gone.post("/api/rooms/join").send({ nickname: "__it__fg", joinCode: room.body.joinCode }).expect(200);
     await stay.post("/api/rooms/join").send({ nickname: "__it__fs", joinCode: room.body.joinCode }).expect(200);
     await prisma.matchParticipant.updateMany({
@@ -293,14 +293,14 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("hides a quiet lobby without deleting it, and a seated heartbeat brings it back", async () => {
-    const host = await guestAgent("__it__kh");
+    const host = await userAgent("__it__kh");
     const room = await host.post("/api/rooms").send({ nickname: "__it__kh", playerCount: 3 }).expect(201);
     await prisma.matchParticipant.updateMany({
       where: { matchId: room.body.id },
       data: { lobbySeenAt: new Date(0) },
     });
 
-    const stranger = await guestAgent("__it__ks");
+    const stranger = await userAgent("__it__ks");
     const list = await stranger.get("/api/rooms").expect(200);
     expect(list.body.rooms.find((item: { id: string }) => item.id === room.body.id)).toBeUndefined();
     expect(await prisma.match.findUnique({ where: { id: room.body.id } })).not.toBeNull();
@@ -323,14 +323,14 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("joins a lobby whose seats have all gone quiet without deleting the room", async () => {
-    const host = await guestAgent("__it__qh");
+    const host = await userAgent("__it__qh");
     const room = await host.post("/api/rooms").send({ nickname: "__it__qh", playerCount: 3 }).expect(201);
     await prisma.matchParticipant.updateMany({
       where: { matchId: room.body.id },
       data: { lobbySeenAt: new Date(0) },
     });
 
-    const guest = await guestAgent("__it__qg");
+    const guest = await userAgent("__it__qg");
     const joined = await guest
       .post("/api/rooms/join")
       .send({ nickname: "__it__qg", joinCode: room.body.joinCode })
@@ -342,9 +342,9 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("keeps the other seats when every seat went quiet together", async () => {
-    const host = await guestAgent("__it__oh");
+    const host = await userAgent("__it__oh");
     const room = await host.post("/api/rooms").send({ nickname: "__it__oh", playerCount: 3 }).expect(201);
-    const guest = await guestAgent("__it__og");
+    const guest = await userAgent("__it__og");
     await guest.post("/api/rooms/join").send({ nickname: "__it__og", joinCode: room.body.joinCode }).expect(200);
     await prisma.matchParticipant.updateMany({
       where: { matchId: room.body.id },
@@ -357,9 +357,9 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("does not start until every acknowledgement is recent", async () => {
-    const host = await guestAgent("__it__yh");
+    const host = await userAgent("__it__yh");
     const room = await host.post("/api/rooms").send({ nickname: "__it__yh", playerCount: 2 }).expect(201);
-    const guest = await guestAgent("__it__yg");
+    const guest = await userAgent("__it__yg");
     await guest.post("/api/rooms/join").send({ nickname: "__it__yg", joinCode: room.body.joinCode }).expect(200);
     await prisma.matchParticipant.updateMany({
       where: { matchId: room.body.id, nickname: "__it__yg" },
@@ -400,7 +400,7 @@ describe.skipIf(!ready)("rooms API", () => {
       });
     }
 
-    const host = await guestAgent("__it__live");
+    const host = await userAgent("__it__live");
     const room = await host.post("/api/rooms").send({ nickname: "__it__live", playerCount: 3 }).expect(201);
     const list = await host.get("/api/rooms").expect(200);
     expect(list.body.rooms.map((item: { id: string }) => item.id)).toEqual([room.body.id]);
@@ -408,7 +408,7 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("releases this identity's own stale lobby seat when it creates or joins another room", async () => {
-    const host = await guestAgent("__it__eh");
+    const host = await userAgent("__it__eh");
     const abandoned = await host.post("/api/rooms").send({ nickname: "__it__eh", playerCount: 3 }).expect(201);
     await prisma.matchParticipant.updateMany({
       where: { matchId: abandoned.body.id },
@@ -420,14 +420,14 @@ describe.skipIf(!ready)("rooms API", () => {
     const blocked = await host.post("/api/rooms").send({ nickname: "__it__eh", playerCount: 3 }).expect(409);
     expect(blocked.body.code).toBe("ROOM_ALREADY_IN_MATCH");
 
-    const friend = await guestAgent("__it__ef");
+    const friend = await userAgent("__it__ef");
     await friend.post("/api/rooms/join").send({ nickname: "__it__ef", joinCode: created.body.joinCode }).expect(200);
     await prisma.matchParticipant.updateMany({
       where: { matchId: created.body.id, nickname: "__it__eh" },
       data: { lobbySeenAt: new Date(0) },
     });
 
-    const other = await guestAgent("__it__eo");
+    const other = await userAgent("__it__eo");
     const target = await other.post("/api/rooms").send({ nickname: "__it__eo", playerCount: 3 }).expect(201);
     const joined = await host
       .post("/api/rooms/join")
@@ -445,12 +445,12 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("lets two players join each other's rooms at once while each holds a stale seat in the other", async () => {
-    const x = await guestAgent("__it__dx");
-    const y = await guestAgent("__it__dy");
+    const x = await userAgent("__it__dx");
+    const y = await userAgent("__it__dy");
     const roomX = await x.post("/api/rooms").send({ nickname: "__it__dx", playerCount: 3 }).expect(201);
     const roomY = await y.post("/api/rooms").send({ nickname: "__it__dy", playerCount: 3 }).expect(201);
-    const fx = await guestAgent("__it__dfx");
-    const fy = await guestAgent("__it__dfy");
+    const fx = await userAgent("__it__dfx");
+    const fy = await userAgent("__it__dfy");
     await fx.post("/api/rooms/join").send({ nickname: "__it__dfx", roomId: roomX.body.id }).expect(200);
     await fy.post("/api/rooms/join").send({ nickname: "__it__dfy", roomId: roomY.body.id }).expect(200);
     await prisma.matchParticipant.updateMany({
@@ -482,7 +482,7 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("rejoins its own stale room by code without deleting it", async () => {
-    const host = await guestAgent("__it__rj");
+    const host = await userAgent("__it__rj");
     const room = await host.post("/api/rooms").send({ nickname: "__it__rj", playerCount: 3 }).expect(201);
     await prisma.matchParticipant.updateMany({
       where: { matchId: room.body.id },
@@ -499,9 +499,9 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("lets a hidden page's seat lapse after a short grace unless a heartbeat comes back", async () => {
-    const host = await guestAgent("__it__wh");
+    const host = await userAgent("__it__wh");
     const room = await host.post("/api/rooms").send({ nickname: "__it__wh", playerCount: 3 }).expect(201);
-    const guest = await guestAgent("__it__wg");
+    const guest = await userAgent("__it__wg");
     await guest.post("/api/rooms/join").send({ nickname: "__it__wg", joinCode: room.body.joinCode }).expect(200);
     const guestSeat = { matchId: room.body.id, nickname: "__it__wg" };
 
@@ -530,7 +530,7 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("does not move a seat's last-seen time forward when its page is hidden", async () => {
-    const host = await guestAgent("__it__vh");
+    const host = await userAgent("__it__vh");
     const room = await host.post("/api/rooms").send({ nickname: "__it__vh", playerCount: 3 }).expect(201);
     await prisma.matchParticipant.updateMany({
       where: { matchId: room.body.id },
@@ -543,12 +543,12 @@ describe.skipIf(!ready)("rooms API", () => {
   });
 
   it("does not start a full room while a seat's page is hidden, and ignores away from strangers or after start", async () => {
-    const host = await guestAgent("__it__xh");
+    const host = await userAgent("__it__xh");
     const room = await host.post("/api/rooms").send({ nickname: "__it__xh", playerCount: 2 }).expect(201);
-    const guest = await guestAgent("__it__xg");
+    const guest = await userAgent("__it__xg");
     await guest.post("/api/rooms/join").send({ nickname: "__it__xg", joinCode: room.body.joinCode }).expect(200);
 
-    const stranger = await guestAgent("__it__xs");
+    const stranger = await userAgent("__it__xs");
     const denied = await stranger.post(`/api/rooms/${room.body.id}/away`).expect(403);
     expect(denied.body.code).toBe("MATCH_FORBIDDEN");
     const missing = await stranger.post("/api/rooms/no-such-room/away").expect(404);
