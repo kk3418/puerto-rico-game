@@ -19,6 +19,7 @@ import {
   withMatchLock,
 } from "./liveMatches";
 import { redactStateForClient } from "./redact";
+import { aiDelayAfterAction } from "./aiDelay";
 import type { VoteChoice, VoteResult, VoteStatus, VoteView } from "./types";
 
 type MatchWithParticipants = Match & { participants: MatchParticipant[] };
@@ -423,7 +424,10 @@ async function releaseSeatToAiLocked(
   return current?.status === "abandoned" ? "abandoned" : "ignored";
 }
 
-export async function ensureRuntime(matchId: string): Promise<void> {
+export async function ensureRuntime(
+  matchId: string,
+  options: { aiDelayMs?: number } = {},
+): Promise<void> {
   let match: MatchWithParticipants | null;
   try {
     match = await loadMatch(matchId);
@@ -452,7 +456,7 @@ export async function ensureRuntime(matchId: string): Promise<void> {
   } catch {
     return;
   }
-  armTimersForState(matchId, match, live.state, false);
+  armTimersForState(matchId, match, live.state, false, options.aiDelayMs);
 }
 
 function armTimersForState(
@@ -460,6 +464,7 @@ function armTimersForState(
   match: MatchWithParticipants,
   state: GameState,
   resetIdle: boolean,
+  aiDelayMs?: number,
 ): void {
   const actor = getActorIndex(state);
   if (actor === null) {
@@ -471,7 +476,7 @@ function armTimersForState(
   if (!participant || !participant.isHuman || participant.isAi) {
     clearIdleTimer(matchId);
     pausedIdle.delete(matchId);
-    scheduleAiTurn(matchId, actor);
+    scheduleAiTurn(matchId, actor, aiDelayMs);
     return;
   }
   clearAiTimer(matchId);
@@ -568,16 +573,17 @@ async function handleIdleTimeout(matchId: string, seatIndex: number): Promise<vo
   }
 }
 
-function scheduleAiTurn(matchId: string, seatIndex: number): void {
+function scheduleAiTurn(matchId: string, seatIndex: number, delayMs = aiTurnDelayMs()): void {
   clearAiTimer(matchId);
   const timer = setTimeout(() => {
     void runAiTurn(matchId, seatIndex);
-  }, aiTurnDelayMs());
+  }, delayMs);
   timer.unref?.();
   aiTimers.set(matchId, timer);
 }
 
 async function runAiTurn(matchId: string, seatIndex: number): Promise<void> {
+  let aiDelayMs = aiTurnDelayMs();
   try {
     await withMatchLock(matchId, async () => {
       const match = await loadMatch(matchId);
@@ -597,6 +603,7 @@ async function runAiTurn(matchId: string, seatIndex: number): Promise<void> {
       const legal = getLegalActions(live.state);
       if (legal.length === 0) return;
       const agent = new HeuristicAgent();
+      const beforePhaseType = live.state.phase.type;
       const action = await agent.chooseAction({
         state: live.state,
         legalActions: legal,
@@ -607,6 +614,13 @@ async function runAiTurn(matchId: string, seatIndex: number): Promise<void> {
         seatIndex,
         action,
         actorUserId: null,
+      });
+      aiDelayMs = aiDelayAfterAction({
+        seatIndex,
+        beforePhaseType,
+        nextActorIndex: getActorIndex(result.state),
+        nextPhaseType: result.state.phase.type,
+        baseDelay: aiTurnDelayMs(),
       });
       if (result.gameOver) {
         broadcastMatchState(matchId, {
@@ -649,7 +663,7 @@ async function runAiTurn(matchId: string, seatIndex: number): Promise<void> {
     }
     console.error(`AI turn failed for ${matchId} seat ${seatIndex}`, err);
   } finally {
-    void ensureRuntime(matchId);
+    void ensureRuntime(matchId, { aiDelayMs });
   }
 }
 
