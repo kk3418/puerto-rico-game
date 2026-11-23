@@ -157,6 +157,7 @@ model MatchVote {
   createdAt       DateTime  @default(now())
   deadlineAt      DateTime
   resolvedAt      DateTime?
+  resolvedAtEventCount Int?
   result          String?
 
   match   Match             @relation(fields: [matchId], references: [id], onDelete: Cascade)

@@ -163,6 +163,19 @@ export async function startEndVote(matchId: string, identity: SessionIdentity): 
     if (open) {
       throw new HttpError(409, "已有進行中的投票", "VOTE_IN_PROGRESS");
     }
+    const lastFailed = await prisma.matchVote.findFirst({
+      where: { matchId, result: "failed", resolvedAtEventCount: { not: null } },
+      orderBy: { resolvedAt: "desc" },
+      select: { id: true, resolvedAtEventCount: true },
+    });
+    if (lastFailed?.resolvedAtEventCount != null) {
+      const eventCount = await prisma.matchEvent.count({ where: { matchId } });
+      if (eventCount <= lastFailed.resolvedAtEventCount) {
+        throw new HttpError(409, "請先完成至少一次遊戲行動，才能再發起結束投票", "VOTE_REQUIRES_ACTION", {
+          voteId: lastFailed.id,
+        });
+      }
+    }
     if (humanSeatIndexes(match).length < 2) {
       await abandonMatchLocked(matchId);
       throw new HttpError(409, "對局已無足夠玩家", "MATCH_ABANDONED");
@@ -262,11 +275,12 @@ async function resolveVoteLocked(
   const match = matchInput ?? (await loadMatch(matchId));
   if (!match) return null;
   clearVoteTimer(matchId);
+  const eventCount = await prisma.matchEvent.count({ where: { matchId } });
 
   if (match.status !== "playing") {
     const resolved = await prisma.matchVote.update({
       where: { id: vote.id },
-      data: { resolvedAt: new Date(), result: "abandoned" },
+      data: { resolvedAt: new Date(), resolvedAtEventCount: eventCount, result: "abandoned" },
     });
     const view = toVoteView({ ...resolved, ballots: vote.ballots }, match);
     broadcastVote(matchId, view);
@@ -279,7 +293,7 @@ async function resolveVoteLocked(
   const result: VoteResult = valid.length === 0 ? "abandoned" : opposers.length > 0 ? "failed" : "passed";
   const resolved = await prisma.matchVote.update({
     where: { id: vote.id },
-    data: { resolvedAt: new Date(), result },
+    data: { resolvedAt: new Date(), resolvedAtEventCount: eventCount, result },
   });
   const view = toVoteView({ ...resolved, ballots: vote.ballots }, match);
 
@@ -309,7 +323,7 @@ async function resolveVoteLocked(
     console.error(`End vote could not finish match ${matchId}`, err);
     const abandoned = await prisma.matchVote.update({
       where: { id: vote.id },
-      data: { result: "abandoned" },
+      data: { resolvedAtEventCount: eventCount, result: "abandoned" },
     });
     broadcastVote(matchId, toVoteView({ ...abandoned, ballots: vote.ballots }, match));
     await abandonMatchLocked(matchId);

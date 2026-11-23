@@ -118,6 +118,11 @@
     "NOT_YOUR_TURN": "It is not your turn",
     "ILLEGAL_ACTION": "That action is not legal right now",
     "MATCH_SERVER_AUTHORITATIVE": "Online matches are played on the server",
+    "MATCH_ONLINE_USE_LEAVE": "Use Leave match for an online match",
+    "VOTE_IN_PROGRESS": "A vote is already in progress",
+    "VOTE_NOT_OPEN": "There is no open vote",
+    "VOTE_REQUIRES_ACTION": "Play at least one action before starting another end vote",
+    "ONLINE_SAVE_UNSUPPORTED": "Online matches do not use saves",
     "SAVE_CONSENT_FORBIDDEN": "Only players in this match can consent to a save",
     "details": {
       "ILLEGAL_ACTION": "illegal action",

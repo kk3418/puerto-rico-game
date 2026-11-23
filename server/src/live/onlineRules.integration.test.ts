@@ -284,6 +284,9 @@ describe.skipIf(!ready)("online match rules", () => {
     const match = await prisma.match.findUnique({ where: { id: matchId } });
     expect(match?.status).toBe("playing");
 
+    const blocked = await host!.agent.post(`/api/matches/${matchId}/end-vote`).expect(409);
+    expect(blocked.body.code).toBe("VOTE_REQUIRES_ACTION");
+
     const left = await guest!.agent.post(`/api/matches/${matchId}/leave`).expect(200);
     expect(left.body.result).toBe("ai");
     const after = await prisma.match.findUnique({ where: { id: matchId } });

@@ -118,6 +118,11 @@
     "NOT_YOUR_TURN": "尚未輪到你行動",
     "ILLEGAL_ACTION": "此行動目前不合法",
     "MATCH_SERVER_AUTHORITATIVE": "線上對局由伺服器處理行動",
+    "MATCH_ONLINE_USE_LEAVE": "線上對局請使用離開對局",
+    "VOTE_IN_PROGRESS": "已有進行中的投票",
+    "VOTE_NOT_OPEN": "目前沒有進行中的投票",
+    "VOTE_REQUIRES_ACTION": "請先完成至少一次遊戲行動，才能再發起結束投票",
+    "ONLINE_SAVE_UNSUPPORTED": "線上對局不支援存檔",
     "SAVE_CONSENT_FORBIDDEN": "只有該局玩家才能同意存檔",
     "details": {
       "ILLEGAL_ACTION": "非法行動",

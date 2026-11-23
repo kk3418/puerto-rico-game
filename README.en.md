@@ -60,9 +60,18 @@ Guest play with a nickname still works when OAuth env vars are unset. Google / G
 
 **Online**
 
-1. On the setup screen, use Online play: create a room (2 / 3 / 4 / 5 seats) or join by code / from the open list.
-2. The lobby shows the join code and seats; when full, the match starts. You can act only on your seat's turn.
-3. To test multiplayer locally, use **two browsers or one normal window plus one private window** (`localhost` shares one session cookie, so two tabs of the same browser count as the same guest and cannot hold two seats).
+1. Every player must sign in with Google or GitHub. Create a room (2 / 3 / 4 / 5 seats) or join by code / from the open list.
+2. The lobby shows the join code and seats. When every seat is filled and acknowledged, the match starts. You can act only on your seat's turn.
+3. To test multiplayer locally, use **two browsers or one normal window plus one private window**, signing in with a different account in each. (`localhost` shares one session cookie, so two tabs of the same browser are the same player.)
+
+**Online rules**
+
+- The lobby host can cancel the room. Once the match starts, the host has no special powers.
+- Any player can press **End match** to start a one-minute vote. The initiator counts as an approve vote, and the game pauses while voting. A single opposing vote keeps the match going; the opposer can then leave or stay. If every human has voted, the vote resolves early.
+- If there are no valid votes, the match is abandoned. If there is at least one approve and no oppose, the match ends and the current position is scored.
+- After a failed end vote, at least one player action must be completed before another end vote can start.
+- Leaving a live match, or not acting on your turn for 90 seconds, hands your seat to AI. Idle timers pause during a vote and resume with the remaining time. If only one human remains, the match is abandoned. A released seat can immediately create or join another room.
+- Online matches do not use saves; solo games keep save/load.
 
 Roles:
 

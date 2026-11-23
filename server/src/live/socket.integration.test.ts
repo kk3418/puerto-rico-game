@@ -80,7 +80,7 @@ describe.skipIf(!ready)("socket play integration", () => {
     });
   }
 
-  async function createOnlineMatch(userIds: Array<string | null>) {
+  async function createOnlineMatch(userIds: Array<string | null>, aiSeats: number[] = []) {
     return prisma.match.create({
       data: {
         mode: "online",
@@ -94,8 +94,8 @@ describe.skipIf(!ready)("socket play integration", () => {
             seatIndex,
             nickname,
             userId: userIds[seatIndex] ?? null,
-            isHuman: true,
-            isAi: false,
+            isHuman: !aiSeats.includes(seatIndex),
+            isAi: aiSeats.includes(seatIndex),
           })),
         },
       },
@@ -235,6 +235,38 @@ describe.skipIf(!ready)("socket play integration", () => {
     clientA.emit("game:action", { matchId: match.id, action });
     expect((await error).code).toBe("VOTE_IN_PROGRESS");
     expect(await prisma.matchEvent.count({ where: { matchId: match.id } })).toBe(0);
+  });
+
+  it("requires a game action after a failed end vote", async () => {
+    const { action } = openingSetup();
+    const userA = await userSession(NAMES[0]!);
+    const userB = await userSession(NAMES[1]!);
+    const match = await createOnlineMatch([userA.userId, userB.userId, null], [2]);
+    const clientA = await connect(userA.cookie);
+
+    await userA.agent.post(`/api/matches/${match.id}/end-vote`).expect(201);
+    const failed = await userB.agent
+      .post(`/api/matches/${match.id}/end-vote/vote`)
+      .send({ choice: "oppose" })
+      .expect(200);
+    expect(failed.body.status).toBe("failed");
+
+    const blocked = await userA.agent.post(`/api/matches/${match.id}/end-vote`).expect(409);
+    expect(blocked.body.code).toBe("VOTE_REQUIRES_ACTION");
+
+    const acted = new Promise<{ eventCount: number }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("timeout waiting for eventCount 1")), 8000);
+      clientA.on("game:state", (payload: { eventCount?: number }) => {
+        if (payload.eventCount !== 1) return;
+        clearTimeout(timer);
+        resolve(payload as { eventCount: number });
+      });
+    });
+    clientA.emit("game:action", { matchId: match.id, action });
+    expect((await acted).eventCount).toBe(1);
+
+    const started = await userA.agent.post(`/api/matches/${match.id}/end-vote`).expect(201);
+    expect(started.body.status).toBe("open");
   });
 
   it("keeps online matches server-authoritative over HTTP", async () => {
