@@ -99,6 +99,7 @@
   "removedTitle": "You are no longer in this match",
   "removedIdle": "Your seat was taken over by AI because you did not act in time.",
   "removedLeave": "You left this match. Your seat is now played by AI.",
+  "removedTaken": "You are no longer seated in this match. Your seat is now played by AI.",
   "seatReplacedTitle": "A seat was taken over by AI",
   "seatReplaced": "Seat {{seat}} is now played by AI ({{reason}}).",
   "seatIdleReason": "inactive",

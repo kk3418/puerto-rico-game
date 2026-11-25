@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { formatEndReason, formatLogEntry } from "../i18n/format";
-import { abandonMatch, castEndVote, finishMatch, leaveMatch, startEndVote } from "../api/matches";
+import { abandonMatch, castEndVote, finishMatch, getMatch, getMatchSeat, leaveMatch, startEndVote } from "../api/matches";
 import { ApiError } from "../api/client";
 import { formatApiError } from "../api/errorMessage";
 import { clearLastMatchId } from "../api/auth";
 import { getGameSocket } from "../api/socket";
 import type {
+  MatchSummary,
   OnlineErrorPayload,
   OnlineOverPayload,
   OnlineSeatPayload,
@@ -99,7 +100,7 @@ export function GameScreen({
   const [voteBusy, setVoteBusy] = useState(false);
   const [voteError, setVoteError] = useState<string | null>(null);
   const [seatNotice, setSeatNotice] = useState<string | null>(null);
-  const [removed, setRemoved] = useState<"leave" | "idle" | null>(null);
+  const [removed, setRemoved] = useState<"leave" | "idle" | "taken" | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const seatIndexRef = useRef<number | null>(null);
   seatIndexRef.current = seatIndex;
@@ -107,6 +108,39 @@ export function GameScreen({
 
   const enqueueRef = useRef(enqueue);
   enqueueRef.current = enqueue;
+
+  const recoverMissingMatch = useCallback(async () => {
+    try {
+      const seat = await getMatchSeat(matchId);
+      if (seat.status === "replaced") {
+        setRemoved("taken");
+        setVote(null);
+        return;
+      }
+      const match = await getMatch(matchId);
+      if (match.status === "finished") {
+        const scores = scoresFromMatchSummary(match);
+        if (scores) {
+          setServerScores(scores);
+          setServerReason(match.endReason);
+          setVerified(match.verified);
+          clearLastMatchId();
+          setVote(null);
+          return;
+        }
+      }
+      if (match.status === "abandoned") {
+        clearLastMatchId();
+        setVote(null);
+        setOnlineOver("abandoned");
+        return;
+      }
+      setError(formatApiError(new ApiError(0, "", "MATCH_NOT_PLAYING")));
+    } catch {
+      clearLastMatchId();
+      onExit();
+    }
+  }, [matchId, onExit]);
 
   useEffect(() => {
     if (online) return;
@@ -251,6 +285,10 @@ export function GameScreen({
       }
     }
     function onGameError(payload: OnlineErrorPayload) {
+      if (payload.code === "MATCH_NOT_PLAYING" || payload.code === "MATCH_FORBIDDEN") {
+        void recoverMissingMatch();
+        return;
+      }
       setError(formatApiError(new ApiError(0, payload.error ?? "", payload.code, payload.params)));
     }
     function onDisconnect() {
@@ -280,7 +318,7 @@ export function GameScreen({
       socket.off("game:over", onOver);
       socket.off("game:error", onGameError);
     };
-  }, [online, matchId, t]);
+  }, [online, matchId, recoverMissingMatch, t]);
 
   useEffect(() => {
     if (online && seatIndex !== null) setSelectedPlayerIndex(seatIndex);
@@ -458,7 +496,9 @@ export function GameScreen({
           <p>
             {removed === "idle"
               ? t("removedIdle", { ns: "game" })
-              : t("removedLeave", { ns: "game" })}
+              : removed === "leave"
+                ? t("removedLeave", { ns: "game" })
+                : t("removedTaken", { ns: "game" })}
           </p>
         </Dialog>
       </div>
@@ -482,7 +522,7 @@ export function GameScreen({
     );
   }
 
-  if (!state) {
+  if (!state && !(online && serverScores)) {
     return (
       <div className="setup">
         <div className="setup-sky" aria-hidden="true" />
@@ -499,11 +539,11 @@ export function GameScreen({
     );
   }
 
-  if ((state.gameOver && state.scores) || (online && serverScores)) {
+  if ((state?.gameOver && state.scores) || (online && serverScores)) {
     return (
       <EndScreen
-        scores={serverScores ?? state.scores ?? []}
-        reason={formatEndReason(serverReason ?? state.endReason, t)}
+        scores={serverScores ?? state?.scores ?? []}
+        reason={formatEndReason(serverReason ?? state?.endReason ?? null, t)}
         verified={verified}
         finishing={finishing}
         finishError={finishError}
@@ -523,6 +563,8 @@ export function GameScreen({
       />
     );
   }
+
+  if (!state) return null;
 
   const legal = online ? serverLegal : getLegalActions(state);
   const currentTurnSeat = online ? getActorIndex(state) : turnSeat;
@@ -811,6 +853,18 @@ export function GameScreen({
       </main>
     </div>
   );
+}
+
+function scoresFromMatchSummary(match: MatchSummary): ScoreBreakdown[] | null {
+  const scores = match.participants
+    .filter((participant) => participant.scores !== null)
+    .map((participant) => ({
+      playerId: `p${participant.seatIndex}`,
+      name: participant.nickname,
+      ...participant.scores!,
+    }));
+  if (scores.length === 0) return null;
+  return scores.sort((a, b) => b.total - a.total);
 }
 
 function receivedForPlayer(state: GameState, playerIndex: number): number | undefined {

@@ -166,6 +166,23 @@ describe.skipIf(!ready)("online match rules", () => {
     const match = await prisma.match.findUnique({ where: { id: matchId } });
     expect(match?.status).toBe("playing");
 
+    const replacedSeat = await guest!.agent.get(`/api/matches/${matchId}/seat`).expect(200);
+    expect(replacedSeat.body).toMatchObject({
+      status: "replaced",
+      matchId,
+      matchStatus: "playing",
+      seat: {
+        seatIndex: seat,
+        isHuman: false,
+        isAi: true,
+        replacedFromUserId: guest!.userId,
+      },
+    });
+    const currentSeat = await host!.agent.get(`/api/matches/${matchId}/seat`).expect(200);
+    expect(currentSeat.body).toMatchObject({ status: "seated", matchStatus: "playing" });
+    const stranger = await session("stranger");
+    await stranger.agent.get(`/api/matches/${matchId}/seat`).expect(404);
+
     const after = await liveState(matchId, host!);
     expect(after.state.players[seat]?.isHuman).toBe(false);
 

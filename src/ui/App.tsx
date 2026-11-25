@@ -12,7 +12,7 @@ import {
 } from "../api/auth";
 import { ApiError } from "../api/client";
 import { formatApiError } from "../api/errorMessage";
-import { createMatch, getMatch, getMatchState } from "../api/matches";
+import { createMatch, getMatch, getMatchSeat, getMatchState } from "../api/matches";
 import { createRoom, joinRoom, type RoomSummary } from "../api/rooms";
 import { resetGameSocket } from "../api/socket";
 import type { AuthMe, MatchSummary } from "../api/types";
@@ -41,6 +41,7 @@ export function App() {
   const [booting, setBooting] = useState(true);
   const [play, setPlay] = useState<PlaySession | null>(null);
   const [lobby, setLobby] = useState<LobbyRoom | null>(null);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
 
   const handleAuthChange = useCallback((next: AuthMe) => {
     resetGameSocket();
@@ -143,6 +144,20 @@ export function App() {
       } catch (err) {
         if (err instanceof ApiError) {
           if (await resumeOnlineLobby(id)) return;
+          try {
+            const seat = await getMatchSeat(id);
+            if (seat.status === "replaced") {
+              setResumeNotice(
+                seat.matchStatus === "finished"
+                  ? i18n.t("seatReplacedFinishedNotice")
+                  : seat.matchStatus === "abandoned"
+                    ? i18n.t("seatReplacedAbandonedNotice")
+                    : i18n.t("seatReplacedNotice"),
+              );
+            }
+          } catch {
+            // Not a participant, or the match is gone; just forget the pointer.
+          }
           clearLastMatchId();
         }
       }
@@ -270,6 +285,8 @@ export function App() {
       auth={auth}
       authError={authError}
       bootError={bootError}
+      notice={resumeNotice}
+      onClearNotice={() => setResumeNotice(null)}
       onAuthChange={handleAuthChange}
       onStart={(playerCount, difficulty, nickname) => startNew(playerCount, difficulty, nickname)}
       onContinue={continueMatch}

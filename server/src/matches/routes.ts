@@ -86,6 +86,8 @@ function matchSummary(match: {
     guestId: string | null;
     isHuman: boolean;
     isAi: boolean;
+    replacedByAiAt: Date | null;
+    replacedFromUserId: string | null;
     vpChips: number | null;
     buildingVp: number | null;
     guildHall: number | null;
@@ -123,6 +125,8 @@ function matchSummary(match: {
       guestId: p.guestId,
       isHuman: p.isHuman,
       isAi: p.isAi,
+      replacedByAiAt: p.replacedByAiAt?.toISOString() ?? null,
+      replacedFromUserId: p.replacedFromUserId,
       scores:
         p.total === null
           ? null
@@ -190,6 +194,37 @@ matchesRouter.post("/", async (req, res) => {
   });
 
   res.status(201).json({ ...matchSummary(match), playToken: match.playToken });
+});
+
+matchesRouter.get("/:id/seat", async (req, res) => {
+  const { userId } = requireUser(req);
+  const id = matchIdParam(req);
+  const match = await prisma.match.findUnique({
+    where: { id },
+    include: { participants: { orderBy: { seatIndex: "asc" } } },
+  });
+  if (!match || match.mode !== "online") {
+    throw new HttpError(404, "找不到對局", "MATCH_NOT_FOUND");
+  }
+  const current = match.participants.find((participant) => participant.userId === userId);
+  const replaced = match.participants.find((participant) => participant.replacedFromUserId === userId);
+  const seat = current ?? replaced;
+  if (!seat) {
+    throw new HttpError(404, "你不在這個對局中", "MATCH_SEAT_NOT_FOUND");
+  }
+  res.json({
+    status: current ? "seated" : "replaced",
+    matchId: match.id,
+    matchStatus: match.status,
+    seat: {
+      seatIndex: seat.seatIndex,
+      nickname: seat.nickname,
+      isHuman: seat.isHuman,
+      isAi: seat.isAi,
+      replacedByAiAt: seat.replacedByAiAt?.toISOString() ?? null,
+      replacedFromUserId: seat.replacedFromUserId,
+    },
+  });
 });
 
 matchesRouter.get("/:id", async (req, res) => {

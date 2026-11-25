@@ -59,8 +59,23 @@ export type MatchSummary = {
     isHuman: boolean;
     isAi: boolean;
     replacedByAiAt?: string | null;
+    replacedFromUserId?: string | null;
     scores: ParticipantScore | null;
   }>;
+};
+
+export type MatchSeatInfo = {
+  status: "seated" | "replaced";
+  matchId: string;
+  matchStatus: "lobby" | "playing" | "finished" | "abandoned";
+  seat: {
+    seatIndex: number;
+    nickname: string;
+    isHuman: boolean;
+    isAi: boolean;
+    replacedByAiAt: string | null;
+    replacedFromUserId: string | null;
+  };
 };
 
 export type FinishResult = MatchSummary & {

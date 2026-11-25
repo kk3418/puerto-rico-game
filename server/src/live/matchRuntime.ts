@@ -394,6 +394,7 @@ async function releaseSeatToAiLocked(
       userId: null,
       guestId: null,
       replacedByAiAt: new Date(),
+      replacedFromUserId: seat.userId,
     },
   });
   await prisma.matchVoteBallot.deleteMany({

@@ -447,6 +447,22 @@ test("an idle player is replaced by AI", async ({ browser }) => {
   const stored = await prisma.match.findUnique({ where: { id: room.id } });
   expect(stored?.status).toBe("playing");
 
+  // Reopening the site after the takeover explains why the old seat is gone.
+  const replaced = await prisma.matchParticipant.findFirst({
+    where: { matchId: room.id, isAi: true },
+  });
+  const names = ["e2e-idle-0", "e2e-idle-1", "e2e-idle-2"];
+  const replacedIndex = replaced ? names.indexOf(replaced.nickname) : -1;
+  if (replacedIndex >= 0) {
+    const pages = [host, guest, third];
+    await pages[replacedIndex]!.close();
+    const reopened = await openSetupPage(contexts[replacedIndex]!, names[replacedIndex]!, true);
+    await expect(reopened.getByRole("dialog", { name: "Last online match" })).toContainText(
+      "taken over by AI",
+    );
+    await reopened.close();
+  }
+
   for (const context of contexts) await context.close();
 });
 

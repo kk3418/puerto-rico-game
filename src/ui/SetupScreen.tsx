@@ -25,6 +25,8 @@ export function SetupScreen({
   auth,
   authError,
   bootError,
+  notice,
+  onClearNotice,
   onAuthChange,
   onStart,
   onContinue,
@@ -36,6 +38,8 @@ export function SetupScreen({
   auth: AuthMe | null;
   authError: string | null;
   bootError: string | null;
+  notice: string | null;
+  onClearNotice: () => void;
   onAuthChange: (next: AuthMe) => void;
   onStart: (playerCount: PlayerCount, difficulty: Difficulty, nickname: string) => Promise<void>;
   onContinue: (match: MatchSummary) => Promise<void>;
@@ -221,6 +225,19 @@ export function SetupScreen({
         </div>
 
         {error && <p className="error">{error}</p>}
+
+        {notice && (
+          <Dialog
+            title={t("resumeNoticeTitle")}
+            actions={
+              <button type="button" className="text-btn" onClick={onClearNotice}>
+                {t("close")}
+              </button>
+            }
+          >
+            <p>{notice}</p>
+          </Dialog>
+        )}
 
         {blocked && (
           <Dialog

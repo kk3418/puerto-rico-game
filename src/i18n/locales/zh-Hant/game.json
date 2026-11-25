@@ -99,6 +99,7 @@
   "removedTitle": "你已不在這場對局中",
   "removedIdle": "你太久沒有行動，座位已由電腦玩家接手。",
   "removedLeave": "你已離開這場對局，座位現在由電腦玩家操作。",
+  "removedTaken": "你已不在這場對局的座位上，該座位現在由電腦玩家操作。",
   "seatReplacedTitle": "有座位由電腦接手",
   "seatReplaced": "座位 {{seat}} 現在由電腦玩家接手（{{reason}}）。",
   "seatIdleReason": "閒置",
