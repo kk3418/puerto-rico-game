@@ -19,7 +19,7 @@ import {
   withMatchLock,
 } from "./liveMatches";
 import { redactStateForClient } from "./redact";
-import { aiDelayAfterAction } from "./aiDelay";
+import { aiTurnDelayMs } from "./aiDelay";
 import type { VoteChoice, VoteResult, VoteStatus, VoteView } from "./types";
 
 type MatchWithParticipants = Match & { participants: MatchParticipant[] };
@@ -56,10 +56,6 @@ export function idleTurnMs(): number {
 
 export function voteDurationMs(): number {
   return envMs("ONLINE_VOTE_MS", 60_000);
-}
-
-export function aiTurnDelayMs(): number {
-  return envMs("ONLINE_AI_DELAY_MS", 800);
 }
 
 function loadMatch(matchId: string): Promise<MatchWithParticipants | null> {
@@ -623,7 +619,6 @@ async function runAiTurn(matchId: string, seatIndex: number): Promise<void> {
       const legal = getLegalActions(live.state);
       if (legal.length === 0) return;
       const agent = new HeuristicAgent();
-      const beforePhaseType = live.state.phase.type;
       const action = await agent.chooseAction({
         state: live.state,
         legalActions: legal,
@@ -635,13 +630,7 @@ async function runAiTurn(matchId: string, seatIndex: number): Promise<void> {
         action,
         actorUserId: null,
       });
-      aiDelayMs = aiDelayAfterAction({
-        seatIndex,
-        beforePhaseType,
-        nextActorIndex: getActorIndex(result.state),
-        nextPhaseType: result.state.phase.type,
-        baseDelay: aiTurnDelayMs(),
-      });
+      aiDelayMs = result.aiDelayMs;
       if (result.gameOver) {
         broadcastMatchState(matchId, {
           state: redactStateForClient(result.state),

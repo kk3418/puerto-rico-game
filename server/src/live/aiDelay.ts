@@ -6,6 +6,13 @@
  * delay is only applied when the AI finishes its part of a phase: the phase
  * type changes, the actor changes, or the match ends.
  */
+export function aiTurnDelayMs(): number {
+  const raw = process.env.ONLINE_AI_DELAY_MS;
+  if (!raw) return 800;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 800;
+}
+
 export function aiDelayAfterAction(input: {
   seatIndex: number;
   beforePhaseType: string;

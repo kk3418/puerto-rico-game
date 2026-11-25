@@ -14,6 +14,7 @@ import type { SessionIdentity } from "../identity";
 import { finishMatch, type FinishResult } from "../matches/finish";
 import { describeActionContext, isAction, replaySeatNames, replayStoredActions } from "../matches/replay";
 import { replayCache } from "../matches/replayCache";
+import { aiDelayAfterAction, aiTurnDelayMs } from "./aiDelay";
 
 type LiveEntry = {
   state: GameState;
@@ -136,6 +137,8 @@ export type LiveActionResult = {
   legalActions: Action[];
   eventCount: number;
   gameOver: boolean;
+  phaseChanged: boolean;
+  aiDelayMs: number;
   finish?: FinishResult;
 };
 
@@ -185,6 +188,7 @@ export async function applySeatActionLocked(input: {
     throw new HttpError(409, "對局狀態無法對應行動者", "EVENT_NO_ACTOR");
   }
 
+  const beforePhaseType = entry.state.phase.type;
   const nextState = applyAction(entry.state, input.action);
   const seq = entry.eventCount + 1;
   try {
@@ -217,6 +221,14 @@ export async function applySeatActionLocked(input: {
     legalActions: getLegalActions(nextState),
     eventCount: seq,
     gameOver: nextState.gameOver,
+    phaseChanged: nextState.phase.type !== beforePhaseType,
+    aiDelayMs: aiDelayAfterAction({
+      seatIndex: input.seatIndex,
+      beforePhaseType,
+      nextActorIndex: getActorIndex(nextState),
+      nextPhaseType: nextState.phase.type,
+      baseDelay: aiTurnDelayMs(),
+    }),
   };
   if (nextState.gameOver) {
     result.finish = await finishMatch(input.matchId);

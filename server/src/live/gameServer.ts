@@ -150,7 +150,7 @@ export function attachGameServer(server: HttpServer): Server {
             endReason: result.finish.endReason,
           });
         }
-        await ensureRuntime(matchId);
+        await ensureRuntime(matchId, { aiDelayMs: result.aiDelayMs });
       } catch (err) {
         emitGameError(socket, err);
       }
