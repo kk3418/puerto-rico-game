@@ -69,7 +69,7 @@ Guest play with a nickname still works when OAuth env vars are unset. Google / G
 - The lobby host can cancel the room. Once the match starts, the host has no special powers.
 - Any player can press **End match** to start a one-minute vote. The initiator counts as an approve vote, and the game pauses while voting. A single opposing vote keeps the match going; the opposer can then leave or stay. If every human has voted, the vote resolves early.
 - If there are no valid votes, the match is abandoned. If there is at least one approve and no oppose, the match ends and the current position is scored.
-- After a failed end vote, at least one player action must be completed before another end vote can start.
+- After a failed end vote, at least one player or AI action must be completed before another end vote can start.
 - Leaving a live match, or not acting on your turn for 90 seconds, hands your seat to AI. Idle timers pause during a vote and resume with the remaining time. If only one human remains, the match is abandoned. A released seat can immediately create or join another room.
 - An AI seat uses the same heuristic player as solo. Sub-actions inside one phase run back-to-back; the server waits 800 ms only when the AI finishes its part of a phase, changes actor, or ends the match.
 - Online matches do not use saves; solo games keep save/load.
