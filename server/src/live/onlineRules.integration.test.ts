@@ -1,6 +1,7 @@
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { getActorIndex, type GameState } from "../../../src/engine";
 import { prisma } from "../db";
+import { clearAllMatchTimers, reconcileOnlineMatches } from "../live/matchRuntime";
 import { prepareIntegrationDb, resetIntegrationDb, userSession, type TestAgent } from "../test/harness";
 
 const ready = await prepareIntegrationDb();
@@ -350,6 +351,59 @@ describe.skipIf(!ready)("online match rules", () => {
     });
     expect(later?.isAi).toBe(true);
   }, 15_000);
+
+  it("restores idle takeover after a simulated server restart", async () => {
+    process.env.ONLINE_IDLE_MS = "80";
+    process.env.ONLINE_AI_DELAY_MS = "15";
+    const { sessions, matchId } = await startedMatch(3);
+    const [host] = sessions;
+    const actor = getActorIndex((await liveState(matchId, host!)).state);
+    expect(actor).not.toBeNull();
+
+    clearAllMatchTimers();
+    await reconcileOnlineMatches();
+
+    let participant = null;
+    let events = 0;
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      participant = await prisma.matchParticipant.findFirst({
+        where: { matchId, seatIndex: actor! },
+      });
+      events = await prisma.matchEvent.count({ where: { matchId } });
+      if (participant?.isAi && events > 0) break;
+      await sleep(25);
+    }
+
+    expect(participant).toMatchObject({ isHuman: false, isAi: true });
+    expect(events).toBeGreaterThan(0);
+  });
+
+  it("resolves an expired vote after a simulated server restart", async () => {
+    process.env.ONLINE_VOTE_MS = "60";
+    const { sessions, matchId } = await startedMatch(3);
+    const [host] = sessions;
+
+    await host!.agent.post(`/api/matches/${matchId}/end-vote`).expect(201);
+    await sleep(100);
+    clearAllMatchTimers();
+    await reconcileOnlineMatches();
+
+    await expect
+      .poll(
+        async () =>
+          (
+            await prisma.matchVote.findFirst({
+              where: { matchId },
+              orderBy: { createdAt: "desc" },
+            })
+          )?.result,
+        { timeout: 3000 },
+      )
+      .not.toBeNull();
+    const match = await prisma.match.findUnique({ where: { id: matchId } });
+    expect(match?.status).toBe("finished");
+  });
 
   it("takes over an idle acting seat with AI and lets the AI act", async () => {
     process.env.ONLINE_IDLE_MS = "80";

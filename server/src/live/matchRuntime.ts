@@ -459,6 +459,25 @@ export async function ensureRuntime(
   armTimersForState(matchId, match, live.state, false, options.aiDelayMs);
 }
 
+/**
+ * Rebuild in-memory timers after a server restart. Vote deadlines are in the
+ * database and are re-armed immediately; idle/AI windows start fresh because
+ * their deadlines are intentionally not persisted.
+ */
+export async function reconcileOnlineMatches(): Promise<void> {
+  const matches = await prisma.match.findMany({
+    where: { mode: "online", status: "playing" },
+    select: { id: true },
+  });
+  for (const match of matches) {
+    try {
+      await ensureRuntime(match.id);
+    } catch (err) {
+      console.error(`Could not restore online match ${match.id}`, err);
+    }
+  }
+}
+
 function armTimersForState(
   matchId: string,
   match: MatchWithParticipants,
