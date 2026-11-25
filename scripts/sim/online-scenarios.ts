@@ -508,25 +508,34 @@ const closeOnOwnTurnScenario = async (_makeCtx: () => Promise<Ctx>) => {
   check(participant?.isAi === true && participant?.isHuman === false && participant.userId === null, "seat flipped to AI in DB");
   check(participant?.replacedByAiAt !== null, "replacedByAiAt recorded");
   // AI back-to-back sub-actions vs delay between phase changes
-  const rows = await prisma.matchEvent.findMany({
-    where: { matchId: ctx.matchId, actorSeatIndex: closedSeat },
+  const allRows = await prisma.matchEvent.findMany({
+    where: { matchId: ctx.matchId },
     orderBy: { seq: "asc" },
   });
+  const rows = allRows.filter((event) => event.actorSeatIndex === closedSeat);
   let samePhaseFast = 0;
   let samePhaseSlow = 0;
   let crossSlow = 0;
   let crossFast = 0;
-  for (let i = 1; i < rows.length; i++) {
-    const prev = rows[i - 1]!;
-    const cur = rows[i]!;
-    const gap = cur.createdAt.getTime() - prev.createdAt.getTime();
-    if (prev.phaseType === cur.phaseType && prev.round === cur.round) {
-      if (gap <= 200) samePhaseFast += 1;
-      else samePhaseSlow += 1;
-    } else {
-      if (gap >= 200) crossSlow += 1;
-      else crossFast += 1;
+  // Only measure gaps between consecutive AI actions. A human action in
+  // between would add its own network/UI time and is not an AI delay.
+  let prevAi: (typeof allRows)[number] | null = null;
+  for (const cur of allRows) {
+    if (cur.actorSeatIndex !== closedSeat) {
+      prevAi = null;
+      continue;
     }
+    if (prevAi) {
+      const gap = cur.createdAt.getTime() - prevAi.createdAt.getTime();
+      if (prevAi.phaseType === cur.phaseType && prevAi.round === cur.round) {
+        if (gap <= 200) samePhaseFast += 1;
+        else samePhaseSlow += 1;
+      } else {
+        if (gap >= 200) crossSlow += 1;
+        else crossFast += 1;
+      }
+    }
+    prevAi = cur;
   }
   check(samePhaseSlow === 0, `AI sub-actions within a phase are back-to-back (slow gaps: ${samePhaseSlow})`);
   check(rows.length < 2 || crossFast <= Math.max(1, Math.ceil(rows.length * 0.05)), `AI delay applied between phases (fast gaps: ${crossFast}/${rows.length})`);
