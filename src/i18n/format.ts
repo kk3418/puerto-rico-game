@@ -21,7 +21,7 @@ function translateId(t: TFunction, ns: string, id: string | number | undefined):
 function normalizeEndReasonKey(
   reason: string,
 ): { key: string; params?: Record<string, string | number> } | null {
-  if (reason === "vpExhausted" || reason === "colonistSupplyEmpty" || reason === "cityFull") {
+  if (reason === "vpExhausted" || reason === "colonistSupplyEmpty" || reason === "cityFull" || reason === "endedByVote") {
     return { key: reason };
   }
   const cityMatch = reason.match(/^cityFull:(.+)$/);

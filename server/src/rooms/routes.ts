@@ -5,7 +5,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
-import { requireIdentity, type SessionIdentity } from "../identity";
+import { requireUser, type SessionIdentity } from "../identity";
+import { ensureRuntime } from "../live/matchRuntime";
 import { nicknameSchema } from "../validation";
 import {
   heartbeatLobby,
@@ -83,9 +84,18 @@ async function assertNoActiveOnlineMatch(identity: SessionIdentity, db: Db = pri
       OR: seatsHeldBy(identity),
       match: { mode: "online", status: { in: ONLINE_ACTIVE_STATUSES } },
     },
+    select: {
+      matchId: true,
+      seatIndex: true,
+      match: { select: { status: true, hostSeatIndex: true } },
+    },
   });
   if (existing) {
-    throw new HttpError(409, "已有進行中的線上對局", "ROOM_ALREADY_IN_MATCH");
+    throw new HttpError(409, "已有進行中的線上對局", "ROOM_ALREADY_IN_MATCH", {
+      matchId: existing.matchId,
+      status: existing.match.status,
+      isHost: existing.seatIndex === existing.match.hostSeatIndex ? 1 : 0,
+    });
   }
 }
 
@@ -136,7 +146,8 @@ async function loadOnlineRoom(id: string, db: Db = prisma) {
 export const roomsRouter = Router();
 
 roomsRouter.post("/", async (req, res) => {
-  const identity = requireIdentity(req);
+  const { userId } = requireUser(req);
+  const identity: SessionIdentity = { userId };
   const body = createBodySchema.parse(req.body);
   if (identity.guestId) {
     req.session.guestNickname = body.nickname;
@@ -184,7 +195,7 @@ roomsRouter.post("/", async (req, res) => {
 });
 
 roomsRouter.get("/", async (req, res) => {
-  requireIdentity(req);
+  requireUser(req);
   const now = Date.now();
   const matches = await prisma.match.findMany({
     where: {
@@ -206,7 +217,8 @@ roomsRouter.get("/", async (req, res) => {
 });
 
 roomsRouter.post("/join", async (req, res) => {
-  const identity = requireIdentity(req);
+  const { userId } = requireUser(req);
+  const identity: SessionIdentity = { userId };
   const body = joinBodySchema.parse(req.body);
   if (identity.guestId) {
     req.session.guestNickname = body.nickname;
@@ -293,17 +305,20 @@ roomsRouter.post("/join", async (req, res) => {
 });
 
 roomsRouter.post("/:id/heartbeat", async (req, res) => {
-  const identity = requireIdentity(req);
+  const { userId } = requireUser(req);
+  const identity: SessionIdentity = { userId };
   const id = roomIdParam(req);
   const body = heartbeatBodySchema.parse(req.body ?? {});
   const result = await heartbeatLobby(id, identity, body.ready === true);
   if (result.status === "missing") throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
   if (result.status === "forbidden") throw new HttpError(403, "無權存取此對局", "MATCH_FORBIDDEN");
+  if (result.match.status === "playing") await ensureRuntime(id);
   res.json(roomSummary(result.match));
 });
 
 roomsRouter.post("/:id/away", async (req, res) => {
-  const identity = requireIdentity(req);
+  const { userId } = requireUser(req);
+  const identity: SessionIdentity = { userId };
   const id = roomIdParam(req);
   const result = await markLobbyAway(id, identity);
   if (result.status === "missing") throw new HttpError(404, "找不到房間", "ROOM_NOT_FOUND");
@@ -312,7 +327,8 @@ roomsRouter.post("/:id/away", async (req, res) => {
 });
 
 roomsRouter.post("/:id/leave", async (req, res) => {
-  const identity = requireIdentity(req);
+  const { userId } = requireUser(req);
+  const identity: SessionIdentity = { userId };
   const id = roomIdParam(req);
   const room = await prisma.$transaction(async (tx) => {
     await lockMatchRow(id, tx);
@@ -331,7 +347,8 @@ roomsRouter.post("/:id/leave", async (req, res) => {
 });
 
 roomsRouter.post("/:id/cancel", async (req, res) => {
-  const identity = requireIdentity(req);
+  const { userId } = requireUser(req);
+  const identity: SessionIdentity = { userId };
   const id = roomIdParam(req);
   await prisma.$transaction(async (tx) => {
     await lockMatchRow(id, tx);

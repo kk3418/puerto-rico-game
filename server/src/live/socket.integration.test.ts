@@ -6,7 +6,7 @@ import { applyAction, createInitialState, getActorIndex, getLegalActions, type A
 import { createApp } from "../app";
 import { prisma } from "../db";
 import { describeActionContext } from "../matches/replay";
-import { guestAgent, prepareIntegrationDb, resetIntegrationDb, testApp, type TestAgent } from "../test/harness";
+import { prepareIntegrationDb, resetIntegrationDb, testApp, userAgent, userSession } from "../test/harness";
 import { attachGameServer } from "./gameServer";
 import { clearLiveMatches } from "./liveMatches";
 
@@ -28,17 +28,6 @@ function openingSetup() {
   const action = legal[0];
   if (actorSeat === null || !action) throw new Error("no opening action");
   return { start, actorSeat, action };
-}
-
-async function guestSession(nickname: string): Promise<{ guestId: string; cookie: string; agent: TestAgent }> {
-  const agent = testApp();
-  const res = await agent.post("/api/auth/guest").send({ nickname }).expect(200);
-  const guestId = res.body.guest?.id as string | undefined;
-  const setCookie = res.headers["set-cookie"];
-  const raw = Array.isArray(setCookie) ? setCookie[0] : setCookie;
-  const cookie = raw?.split(";")[0];
-  if (!guestId || !cookie) throw new Error("guest session missing id or cookie");
-  return { guestId, cookie, agent };
 }
 
 describe.skipIf(!ready)("socket play integration", () => {
@@ -91,7 +80,7 @@ describe.skipIf(!ready)("socket play integration", () => {
     });
   }
 
-  async function createOnlineMatch(guestIds: string[]) {
+  async function createOnlineMatch(userIds: Array<string | null>, aiSeats: number[] = []) {
     return prisma.match.create({
       data: {
         mode: "online",
@@ -104,9 +93,9 @@ describe.skipIf(!ready)("socket play integration", () => {
           create: NAMES.map((nickname, seatIndex) => ({
             seatIndex,
             nickname,
-            guestId: guestIds[seatIndex] ?? null,
-            isHuman: true,
-            isAi: false,
+            userId: userIds[seatIndex] ?? null,
+            isHuman: !aiSeats.includes(seatIndex),
+            isAi: aiSeats.includes(seatIndex),
           })),
         },
       },
@@ -120,16 +109,16 @@ describe.skipIf(!ready)("socket play integration", () => {
     const err = await new Promise<Error & { data?: { code?: string } }>((resolve) => {
       socket.once("connect_error", resolve);
     });
-    expect(err.data?.code).toBe("AUTH_REQUIRED");
+    expect(err.data?.code).toBe("LOGIN_REQUIRED");
   });
 
   it("rejects non-actor and illegal actions, applies a legal action, and redacts state", async () => {
     const { start, actorSeat, action } = openingSetup();
     expect(actorSeat).toBe(0);
 
-    const guestA = await guestSession(NAMES[0]!);
-    const guestB = await guestSession(NAMES[1]!);
-    const match = await createOnlineMatch([guestA.guestId, guestB.guestId, "__sk__ghost"]);
+    const guestA = await userSession(NAMES[0]!);
+    const guestB = await userSession(NAMES[1]!);
+    const match = await createOnlineMatch([guestA.userId, guestB.userId, null]);
 
     const clientA = await connect(guestA.cookie);
     const clientB = await connect(guestB.cookie);
@@ -183,11 +172,108 @@ describe.skipIf(!ready)("socket play integration", () => {
     expect(stored!.action).toEqual(action);
   });
 
+  it("serializes a player leaving with a live action", async () => {
+    const { action } = openingSetup();
+    const userA = await userSession(NAMES[0]!);
+    const userB = await userSession(NAMES[1]!);
+    const match = await createOnlineMatch([userA.userId, userB.userId, null]);
+
+    const clientA = await connect(userA.cookie);
+    const clientB = await connect(userB.cookie);
+    const watchA = waitFor(clientA, "game:state");
+    clientA.emit("game:watch", { matchId: match.id });
+    await watchA;
+    const watchB = waitFor(clientB, "game:state");
+    clientB.emit("game:watch", { matchId: match.id });
+    await watchB;
+
+    const acted = new Promise<{ eventCount: number }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("timeout waiting for eventCount 1")), 8000);
+      clientA.on("game:state", (payload: { eventCount?: number }) => {
+        if (payload.eventCount !== 1) return;
+        clearTimeout(timer);
+        resolve(payload as { eventCount: number });
+      });
+    });
+    clientA.emit("game:action", { matchId: match.id, action });
+    const leave = userB.agent.post(`/api/matches/${match.id}/leave`);
+
+    const [state, left] = await Promise.all([acted, leave]);
+    expect(state.eventCount).toBe(1);
+    expect(left.status).toBe(200);
+    expect(left.body.result).toBe("ai");
+
+    const stored = await prisma.match.findUnique({
+      where: { id: match.id },
+      include: { participants: { orderBy: { seatIndex: "asc" } } },
+    });
+    expect(stored?.status).toBe("playing");
+    expect(stored?.participants[1]).toMatchObject({ isHuman: false, isAi: true, userId: null });
+    expect(await prisma.matchEvent.count({ where: { matchId: match.id } })).toBe(1);
+  });
+
+  it("rejects game actions while an end vote is open", async () => {
+    const { action } = openingSetup();
+    const userA = await userSession(NAMES[0]!);
+    const userB = await userSession(NAMES[1]!);
+    const match = await createOnlineMatch([userA.userId, userB.userId, null]);
+
+    const clientA = await connect(userA.cookie);
+    const clientB = await connect(userB.cookie);
+    const watchA = waitFor(clientA, "game:state");
+    clientA.emit("game:watch", { matchId: match.id });
+    await watchA;
+    const watchB = waitFor(clientB, "game:state");
+    clientB.emit("game:watch", { matchId: match.id });
+    await watchB;
+
+    const vote = waitFor<{ vote: { status: string } }>(clientA, "game:vote");
+    await userA.agent.post(`/api/matches/${match.id}/end-vote`).expect(201);
+    expect((await vote).vote.status).toBe("open");
+
+    const error = waitFor<{ code?: string }>(clientA, "game:error");
+    clientA.emit("game:action", { matchId: match.id, action });
+    expect((await error).code).toBe("VOTE_IN_PROGRESS");
+    expect(await prisma.matchEvent.count({ where: { matchId: match.id } })).toBe(0);
+  });
+
+  it("requires a game action after a failed end vote", async () => {
+    const { action } = openingSetup();
+    const userA = await userSession(NAMES[0]!);
+    const userB = await userSession(NAMES[1]!);
+    const match = await createOnlineMatch([userA.userId, userB.userId, null], [2]);
+    const clientA = await connect(userA.cookie);
+
+    await userA.agent.post(`/api/matches/${match.id}/end-vote`).expect(201);
+    const failed = await userB.agent
+      .post(`/api/matches/${match.id}/end-vote/vote`)
+      .send({ choice: "oppose" })
+      .expect(200);
+    expect(failed.body.status).toBe("failed");
+
+    const blocked = await userA.agent.post(`/api/matches/${match.id}/end-vote`).expect(409);
+    expect(blocked.body.code).toBe("VOTE_REQUIRES_ACTION");
+
+    const acted = new Promise<{ eventCount: number }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("timeout waiting for eventCount 1")), 8000);
+      clientA.on("game:state", (payload: { eventCount?: number }) => {
+        if (payload.eventCount !== 1) return;
+        clearTimeout(timer);
+        resolve(payload as { eventCount: number });
+      });
+    });
+    clientA.emit("game:action", { matchId: match.id, action });
+    expect((await acted).eventCount).toBe(1);
+
+    const started = await userA.agent.post(`/api/matches/${match.id}/end-vote`).expect(201);
+    expect(started.body.status).toBe("open");
+  });
+
   it("keeps online matches server-authoritative over HTTP", async () => {
     const { action } = openingSetup();
-    const guestA = await guestSession(NAMES[0]!);
-    const guestB = await guestSession(NAMES[1]!);
-    const match = await createOnlineMatch([guestA.guestId, guestB.guestId, "__sk__ghost"]);
+    const guestA = await userSession(NAMES[0]!);
+    const guestB = await userSession(NAMES[1]!);
+    const match = await createOnlineMatch([guestA.userId, guestB.userId, null]);
 
     const anonymous = await testApp()
       .post(`/api/matches/${match.id}/events`)
@@ -209,10 +295,10 @@ describe.skipIf(!ready)("socket play integration", () => {
     expect("rng" in state.body.state).toBe(false);
     expect(Array.isArray(state.body.legalActions)).toBe(true);
 
-    const stranger = await guestAgent("__sk__stranger");
+    const stranger = await userAgent("__sk__stranger");
     const forbidden = await stranger.get(`/api/matches/${match.id}/state`).expect(403);
     expect(forbidden.body.code).toBe("MATCH_FORBIDDEN");
 
-    expect(guestA.guestId).not.toBe(guestB.guestId);
+    expect(guestA.userId).not.toBe(guestB.userId);
   });
 });

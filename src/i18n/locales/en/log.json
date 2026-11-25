@@ -24,6 +24,7 @@
   "endReason": {
     "vpExhausted": "the victory point chips have run out",
     "colonistSupplyEmpty": "the colonist supply is empty and the colonist ship cannot be refilled",
-    "cityFull": "{{player}}'s city is full"
+    "cityFull": "{{player}}'s city is full",
+    "endedByVote": "the players voted to end the match"
   }
 }

@@ -8,3 +8,9 @@ export function getGameSocket(): Socket {
   }
   return socket;
 }
+
+/** Drop the cached socket so a changed session re-authenticates on the next watch. */
+export function resetGameSocket(): void {
+  socket?.disconnect();
+  socket = null;
+}

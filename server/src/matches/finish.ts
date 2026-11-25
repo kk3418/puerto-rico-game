@@ -1,8 +1,8 @@
 import type { ScoreBreakdown } from "../../../src/engine";
-import { isPlayerCount } from "../../../src/engine";
+import { isPlayerCount, scoreGame } from "../../../src/engine";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
-import { isAction, replayMatch, replaySeatNames } from "./replay";
+import { isAction, replayMatch, replaySeatNames, replayStoredActions } from "./replay";
 import { replayCache } from "./replayCache";
 import { refreshUserStats } from "./stats";
 
@@ -35,7 +35,10 @@ function scoreFields(score: {
   };
 }
 
-export async function finishMatch(matchId: string): Promise<FinishResult> {
+export async function finishMatch(
+  matchId: string,
+  options: { allowUnfinished?: boolean; endReason?: string } = {},
+): Promise<FinishResult> {
   const match = await prisma.match.findUnique({
     where: { id: matchId },
     include: { participants: { orderBy: { seatIndex: "asc" } }, _count: { select: { events: true } } },
@@ -96,17 +99,38 @@ export async function finishMatch(matchId: string): Promise<FinishResult> {
     throw new HttpError(400, "對局難度無效", "INVALID_DIFFICULTY");
   }
 
-  const replayed = replayMatch({
-    matchId: match.id,
-    playerCount: match.playerCount,
-    difficulty: match.difficulty,
-    seed: match.seed,
-    humanName: match.humanName,
-    actions,
-    seatNames: replaySeatNames(match),
-  });
-  if (!replayed.ok) {
-    throw new HttpError(400, replayed.message, "MATCH_REPLAY_FAILED");
+  let scores: ScoreBreakdown[];
+  let endReason: string | null;
+  if (options.allowUnfinished) {
+    const replayed = replayStoredActions({
+      matchId: match.id,
+      playerCount: match.playerCount,
+      difficulty: match.difficulty,
+      seed: match.seed,
+      humanName: match.humanName,
+      actions,
+      seatNames: replaySeatNames(match),
+    });
+    if (!replayed.ok) {
+      throw new HttpError(400, replayed.message, "MATCH_REPLAY_FAILED");
+    }
+    scores = scoreGame(replayed.state);
+    endReason = options.endReason ?? replayed.state.endReason;
+  } else {
+    const replayed = replayMatch({
+      matchId: match.id,
+      playerCount: match.playerCount,
+      difficulty: match.difficulty,
+      seed: match.seed,
+      humanName: match.humanName,
+      actions,
+      seatNames: replaySeatNames(match),
+    });
+    if (!replayed.ok) {
+      throw new HttpError(400, replayed.message, "MATCH_REPLAY_FAILED");
+    }
+    scores = replayed.scores;
+    endReason = options.endReason ?? replayed.state.endReason;
   }
 
   const now = new Date();
@@ -118,7 +142,7 @@ export async function finishMatch(matchId: string): Promise<FinishResult> {
         status: "finished",
         verified: true,
         endedAt: now,
-        endReason: replayed.state.endReason,
+        endReason,
       },
     });
     if (claimed.count === 0) {
@@ -126,7 +150,7 @@ export async function finishMatch(matchId: string): Promise<FinishResult> {
     }
 
     for (const participant of match.participants) {
-      const score = replayed.scores.find((s) => s.playerId === `p${participant.seatIndex}`);
+      const score = scores.find((s) => s.playerId === `p${participant.seatIndex}`);
       if (!score) continue;
       await tx.matchParticipant.update({
         where: { id: participant.id },
@@ -148,5 +172,5 @@ export async function finishMatch(matchId: string): Promise<FinishResult> {
 
   replayCache.drop(match.id);
 
-  return { scores: replayed.scores, endReason: replayed.state.endReason };
+  return { scores, endReason };
 }

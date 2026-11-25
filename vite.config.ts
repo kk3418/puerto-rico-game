@@ -28,5 +28,8 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.ts", "server/src/**/*.test.ts"],
     setupFiles: ["server/src/test/vitest.setup.ts"],
+    // Integration suites share one Postgres schema and truncate it between
+    // tests, so files must not run against it concurrently.
+    fileParallelism: false,
   },
 });

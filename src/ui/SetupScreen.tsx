@@ -1,36 +1,52 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { readStoredNickname } from "../api/auth";
+import { ApiError } from "../api/client";
 import { formatApiError } from "../api/errorMessage";
-import { listRooms, type RoomListItem } from "../api/rooms";
+import { leaveMatch } from "../api/matches";
+import { cancelRoom, leaveRoom, listRooms, type RoomListItem } from "../api/rooms";
 import type { AuthMe, MatchSummary } from "../api/types";
 import type { Difficulty, PlayerCount } from "../engine/types";
 import { AuthBar } from "./AuthBar";
+import { Dialog } from "./Dialog";
 import { StatsPanel } from "./StatsPanel";
 import "./SetupScreen.css";
 
 type SetupTab = "online" | "solo";
 
+type BlockedMatch = {
+  matchId: string;
+  status: "lobby" | "playing";
+  isHost: boolean;
+  retry: () => Promise<void>;
+};
+
 export function SetupScreen({
   auth,
   authError,
   bootError,
+  notice,
+  onClearNotice,
   onAuthChange,
   onStart,
   onContinue,
   onContinueLast,
   onCreateRoom,
   onJoinRoom,
+  onOpenMatch,
 }: {
   auth: AuthMe | null;
   authError: string | null;
   bootError: string | null;
+  notice: string | null;
+  onClearNotice: () => void;
   onAuthChange: (next: AuthMe) => void;
   onStart: (playerCount: PlayerCount, difficulty: Difficulty, nickname: string) => Promise<void>;
   onContinue: (match: MatchSummary) => Promise<void>;
   onContinueLast?: () => Promise<void>;
   onCreateRoom: (playerCount: PlayerCount, nickname: string) => Promise<void>;
   onJoinRoom: (nickname: string, target: { joinCode?: string; roomId?: string }) => Promise<void>;
+  onOpenMatch: (matchId: string) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<SetupTab>("online");
@@ -39,11 +55,13 @@ export function SetupScreen({
   const [nickname, setNickname] = useState(readStoredNickname);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState<BlockedMatch | null>(null);
   const [onlineCount, setOnlineCount] = useState<PlayerCount>(2);
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [rooms, setRooms] = useState<RoomListItem[] | null>(null);
 
   const ready = Boolean(auth?.user || auth?.guest) && !bootError;
+  const onlineReady = Boolean(auth?.user) && !bootError;
   const trimmed = nickname.trim();
 
   async function run(task: () => Promise<void>) {
@@ -52,10 +70,90 @@ export function SetupScreen({
     try {
       await task();
     } catch (err) {
+      if (err instanceof ApiError && err.code === "ROOM_ALREADY_IN_MATCH" && err.params?.matchId) {
+        setBlocked({
+          matchId: String(err.params.matchId),
+          status: err.params.status === "playing" ? "playing" : "lobby",
+          isHost: err.params.isHost === 1 || err.params.isHost === "1",
+          retry: task,
+        });
+        return;
+      }
       setError(formatApiError(err, t("cannotStart")));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function releaseBlocked(current: BlockedMatch): Promise<void> {
+    if (current.status === "playing") {
+      await leaveMatch(current.matchId);
+      return;
+    }
+    if (current.isHost) {
+      try {
+        await cancelRoom(current.matchId);
+        return;
+      } catch (err) {
+        if (err instanceof ApiError && err.code === "ROOM_NOT_LOBBY") {
+          await leaveMatch(current.matchId);
+          return;
+        }
+        if (!(err instanceof ApiError && err.code === "ROOM_NOT_HOST")) throw err;
+      }
+    }
+    try {
+      await leaveRoom(current.matchId);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "ROOM_NOT_LOBBY") {
+        await leaveMatch(current.matchId);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  async function openBlockedMatch() {
+    const current = blocked;
+    if (!current) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onOpenMatch(current.matchId);
+      setBlocked(null);
+    } catch (err) {
+      setError(formatApiError(err, t("matchNotFound")));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function continueAfterBlockedMatch() {
+    const current = blocked;
+    if (!current) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await releaseBlocked(current);
+    } catch (err) {
+      const gone =
+        err instanceof ApiError &&
+        (err.status === 404 ||
+          err.code === "ROOM_NOT_FOUND" ||
+          err.code === "MATCH_NOT_FOUND" ||
+          err.code === "ROOM_NOT_JOINED" ||
+          err.code === "MATCH_ALREADY_ENDED" ||
+          err.code === "MATCH_ABANDONED" ||
+          err.code === "MATCH_NOT_PLAYING");
+      if (!gone) {
+        setError(formatApiError(err, t("cannotStart")));
+        setBusy(false);
+        return;
+      }
+    }
+    setBlocked(null);
+    setBusy(false);
+    await run(current.retry);
   }
 
   const refreshRooms = useCallback(async () => {
@@ -69,9 +167,9 @@ export function SetupScreen({
   }, []);
 
   useEffect(() => {
-    if (!ready || tab !== "online") return;
+    if (!onlineReady || tab !== "online") return;
     void refreshRooms();
-  }, [ready, tab, refreshRooms]);
+  }, [onlineReady, tab, refreshRooms]);
 
   return (
     <div className="setup">
@@ -128,6 +226,45 @@ export function SetupScreen({
 
         {error && <p className="error">{error}</p>}
 
+        {notice && (
+          <Dialog
+            title={t("resumeNoticeTitle")}
+            actions={
+              <button type="button" className="text-btn" onClick={onClearNotice}>
+                {t("close")}
+              </button>
+            }
+          >
+            <p>{notice}</p>
+          </Dialog>
+        )}
+
+        {blocked && (
+          <Dialog
+            title={t("activeMatchTitle")}
+            showClose
+            onClose={() => setBlocked(null)}
+            actions={
+              <>
+                <button type="button" className="text-btn" disabled={busy} onClick={() => void openBlockedMatch()}>
+                  {t("returnToMatch")}
+                </button>
+                <button
+                  type="button"
+                  className="text-btn"
+                  disabled={busy}
+                  onClick={() => void continueAfterBlockedMatch()}
+                >
+                  {t(blocked.status === "playing" ? "leaveMatchAndContinue" : "leaveOldRoomAndContinue")}
+                </button>
+              </>
+            }
+          >
+            <p>{t(blocked.status === "playing" ? "activeMatchPlaying" : "activeMatchLobby")}</p>
+            {blocked.status === "playing" && <p>{t("activeMatchAiWarning")}</p>}
+          </Dialog>
+        )}
+
         {tab === "online" ? (
           <section
             className="setup-panel"
@@ -135,6 +272,7 @@ export function SetupScreen({
             id="setup-panel-online"
             aria-labelledby="setup-tab-online"
           >
+            {!auth?.user && <p className="hint">{t("signInToPlayOnline")}</p>}
             <div className="setup-cta">
               <fieldset>
                 <legend>{t("playerCount")}</legend>
@@ -154,7 +292,7 @@ export function SetupScreen({
                 <button
                   type="button"
                   className="start-btn"
-                  disabled={!ready || !trimmed || busy}
+                  disabled={!onlineReady || !trimmed || busy}
                   onClick={() => void run(() => onCreateRoom(onlineCount, trimmed))}
                 >
                   {busy ? t("creatingRoom") : t("createRoom")}
@@ -172,7 +310,7 @@ export function SetupScreen({
                 <button
                   type="button"
                   className="start-btn"
-                  disabled={!ready || !trimmed || !joinCodeInput.trim() || busy}
+                  disabled={!onlineReady || !trimmed || !joinCodeInput.trim() || busy}
                   onClick={() => void run(() => onJoinRoom(trimmed, { joinCode: joinCodeInput.trim() }))}
                 >
                   {busy ? t("joiningRoom") : t("joinRoom")}
@@ -185,7 +323,7 @@ export function SetupScreen({
                 <button
                   type="button"
                   className="text-btn"
-                  disabled={!ready || busy}
+                  disabled={!onlineReady || busy}
                   onClick={() => void refreshRooms()}
                 >
                   {t("refreshRooms")}
@@ -205,7 +343,7 @@ export function SetupScreen({
                       <button
                         type="button"
                         className="text-btn"
-                        disabled={!ready || !trimmed || busy}
+                        disabled={!onlineReady || !trimmed || busy}
                         onClick={() => void run(() => onJoinRoom(trimmed, { roomId: room.id }))}
                       >
                         {t("joinRoom")}

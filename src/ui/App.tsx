@@ -12,8 +12,9 @@ import {
 } from "../api/auth";
 import { ApiError } from "../api/client";
 import { formatApiError } from "../api/errorMessage";
-import { createMatch, getMatch, getMatchState } from "../api/matches";
+import { createMatch, getMatch, getMatchSeat, getMatchState } from "../api/matches";
 import { createRoom, joinRoom, type RoomSummary } from "../api/rooms";
+import { resetGameSocket } from "../api/socket";
 import type { AuthMe, MatchSummary } from "../api/types";
 import type { Difficulty, GameState, PlayerCount } from "../engine";
 import { GameScreen } from "./GameScreen";
@@ -40,6 +41,12 @@ export function App() {
   const [booting, setBooting] = useState(true);
   const [play, setPlay] = useState<PlaySession | null>(null);
   const [lobby, setLobby] = useState<LobbyRoom | null>(null);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
+
+  const handleAuthChange = useCallback((next: AuthMe) => {
+    resetGameSocket();
+    setAuth(next);
+  }, []);
 
   const refreshAuth = useCallback(async () => {
     let me = await getMe();
@@ -137,6 +144,20 @@ export function App() {
       } catch (err) {
         if (err instanceof ApiError) {
           if (await resumeOnlineLobby(id)) return;
+          try {
+            const seat = await getMatchSeat(id);
+            if (seat.status === "replaced") {
+              setResumeNotice(
+                seat.matchStatus === "finished"
+                  ? i18n.t("seatReplacedFinishedNotice")
+                  : seat.matchStatus === "abandoned"
+                    ? i18n.t("seatReplacedAbandonedNotice")
+                    : i18n.t("seatReplacedNotice"),
+              );
+            }
+          } catch {
+            // Not a participant, or the match is gone; just forget the pointer.
+          }
           clearLastMatchId();
         }
       }
@@ -169,7 +190,7 @@ export function App() {
 
   async function createOnlineRoom(playerCount: PlayerCount, nickname: string) {
     writeStoredNickname(nickname);
-    await createGuest(nickname);
+    if (!auth?.user) throw new Error(i18n.t("signInToPlayOnline"));
     const room = await createRoom({ nickname, playerCount });
     writeLastMatchId(room.id);
     setLobby(lobbyFromRoom(room));
@@ -177,19 +198,28 @@ export function App() {
 
   async function joinOnlineRoom(nickname: string, target: { joinCode?: string; roomId?: string }) {
     writeStoredNickname(nickname);
-    await createGuest(nickname);
+    if (!auth?.user) throw new Error(i18n.t("signInToPlayOnline"));
     const room = await joinRoom({ nickname, ...target });
     writeLastMatchId(room.id);
     setLobby(lobbyFromRoom(room));
   }
 
+  const openOwnedMatch = useCallback(
+    async (id: string) => {
+      try {
+        await resumeLiveMatch(id);
+      } catch (err) {
+        if (await resumeOnlineLobby(id)) return;
+        throw err;
+      }
+    },
+    [resumeLiveMatch, resumeOnlineLobby],
+  );
+
   async function continueMatch(match: MatchSummary) {
     if (match.mode === "online") {
-      if (match.status === "playing") {
-        enterOnline(match.id, match.playerCount, readStoredNickname());
-        return;
-      }
-      throw new Error(i18n.t("matchNotFound"));
+      await openOwnedMatch(match.id);
+      return;
     }
     try {
       await resumeLiveMatch(match.id);
@@ -204,7 +234,7 @@ export function App() {
       throw new Error(i18n.t("matchNotFound"));
     }
     try {
-      await resumeLiveMatch(id);
+      await openOwnedMatch(id);
     } catch {
       clearLastMatchId();
       throw new Error(i18n.t("matchNotFound"));
@@ -255,12 +285,15 @@ export function App() {
       auth={auth}
       authError={authError}
       bootError={bootError}
-      onAuthChange={setAuth}
+      notice={resumeNotice}
+      onClearNotice={() => setResumeNotice(null)}
+      onAuthChange={handleAuthChange}
       onStart={(playerCount, difficulty, nickname) => startNew(playerCount, difficulty, nickname)}
       onContinue={continueMatch}
       onContinueLast={readLastMatchId() ? continueLast : undefined}
       onCreateRoom={createOnlineRoom}
       onJoinRoom={joinOnlineRoom}
+      onOpenMatch={openOwnedMatch}
     />
   );
 }

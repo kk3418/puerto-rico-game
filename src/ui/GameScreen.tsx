@@ -2,12 +2,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { formatEndReason, formatLogEntry } from "../i18n/format";
-import { abandonMatch, finishMatch, saveMatchConsent } from "../api/matches";
+import { abandonMatch, castEndVote, finishMatch, getMatch, getMatchSeat, leaveMatch, startEndVote } from "../api/matches";
 import { ApiError } from "../api/client";
 import { formatApiError } from "../api/errorMessage";
 import { clearLastMatchId } from "../api/auth";
 import { getGameSocket } from "../api/socket";
-import type { OnlineErrorPayload, OnlineOverPayload, OnlineStatePayload } from "../api/types";
+import type {
+  MatchSummary,
+  OnlineErrorPayload,
+  OnlineOverPayload,
+  OnlineSeatPayload,
+  OnlineStatePayload,
+  OnlineVotePayload,
+  OnlineVoteView,
+  VoteChoice,
+} from "../api/types";
 import { HeuristicAgent, HumanAgent, dispatchAction, type PlayerAgent } from "../agents";
 import {
   chosenRoleFor,
@@ -70,7 +79,7 @@ export function GameScreen({
   const [awaitingHuman, setAwaitingHuman] = useState(false);
   const [turnSeat, setTurnSeat] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<null | "leave">(null);
+  const [dialog, setDialog] = useState<null | "leave" | "end">(null);
   const [logOpen, setLogOpen] = useState(false);
   const [selectedPlayerIndex, setSelectedPlayerIndex] = useState(() =>
     startRef.current ? Math.max(0, startRef.current.players.findIndex((p) => p.isHuman)) : 0,
@@ -87,11 +96,51 @@ export function GameScreen({
   const [serverLegal, setServerLegal] = useState<Action[]>([]);
   const [connected, setConnected] = useState(true);
   const [onlineOver, setOnlineOver] = useState<"abandoned" | null>(null);
-  const [consent, setConsent] = useState<{ consented: number; required: number } | null>(null);
+  const [vote, setVote] = useState<OnlineVoteView | null>(null);
+  const [voteBusy, setVoteBusy] = useState(false);
+  const [voteError, setVoteError] = useState<string | null>(null);
+  const [seatNotice, setSeatNotice] = useState<string | null>(null);
+  const [removed, setRemoved] = useState<"leave" | "idle" | "taken" | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const seatIndexRef = useRef<number | null>(null);
+  seatIndexRef.current = seatIndex;
   const { enqueue, flush, pending, syncError } = useMatchSync(matchId, nextSeq, playToken ?? "");
 
   const enqueueRef = useRef(enqueue);
   enqueueRef.current = enqueue;
+
+  const recoverMissingMatch = useCallback(async () => {
+    try {
+      const seat = await getMatchSeat(matchId);
+      if (seat.status === "replaced") {
+        setRemoved("taken");
+        setVote(null);
+        return;
+      }
+      const match = await getMatch(matchId);
+      if (match.status === "finished") {
+        const scores = scoresFromMatchSummary(match);
+        if (scores) {
+          setServerScores(scores);
+          setServerReason(match.endReason);
+          setVerified(match.verified);
+          clearLastMatchId();
+          setVote(null);
+          return;
+        }
+      }
+      if (match.status === "abandoned") {
+        clearLastMatchId();
+        setVote(null);
+        setOnlineOver("abandoned");
+        return;
+      }
+      setError(formatApiError(new ApiError(0, "", "MATCH_NOT_PLAYING")));
+    } catch {
+      clearLastMatchId();
+      onExit();
+    }
+  }, [matchId, onExit]);
 
   useEffect(() => {
     if (online) return;
@@ -197,13 +246,36 @@ export function GameScreen({
       if (payload.matchId !== matchId) return;
       setState(payload.state);
       setServerLegal(payload.legalActions);
+      if (payload.vote !== undefined) {
+        setVote((previous) => payload.vote ?? (previous && previous.status !== "open" ? previous : null));
+      }
       if (typeof payload.seatIndex === "number") {
         setSeatIndex((prev) => prev ?? payload.seatIndex!);
       }
     }
+    function onVote(payload: OnlineVotePayload) {
+      if (payload.matchId !== matchId) return;
+      setVote(payload.vote);
+      if (payload.vote.status === "open") setDialog(null);
+    }
+    function onSeat(payload: OnlineSeatPayload) {
+      if (payload.matchId !== matchId) return;
+      if (payload.seatIndex === seatIndexRef.current) {
+        setRemoved(payload.reason);
+        return;
+      }
+      setSeatNotice(
+        t("seatReplaced", {
+          ns: "game",
+          seat: payload.seatIndex + 1,
+          reason: payload.reason === "idle" ? t("seatIdleReason", { ns: "game" }) : t("seatLeaveReason", { ns: "game" }),
+        }),
+      );
+    }
     function onOver(payload: OnlineOverPayload) {
       if (payload.matchId !== matchId) return;
       clearLastMatchId();
+      setVote(null);
       if (payload.status === "finished" && payload.scores) {
         setServerScores(payload.scores);
         setServerReason(payload.endReason ?? null);
@@ -213,6 +285,10 @@ export function GameScreen({
       }
     }
     function onGameError(payload: OnlineErrorPayload) {
+      if (payload.code === "MATCH_NOT_PLAYING" || payload.code === "MATCH_FORBIDDEN") {
+        void recoverMissingMatch();
+        return;
+      }
       setError(formatApiError(new ApiError(0, payload.error ?? "", payload.code, payload.params)));
     }
     function onDisconnect() {
@@ -223,6 +299,8 @@ export function GameScreen({
     socket.on("disconnect", onDisconnect);
     socket.on("connect_error", onDisconnect);
     socket.on("game:state", onState);
+    socket.on("game:vote", onVote);
+    socket.on("game:seat", onSeat);
     socket.on("game:over", onOver);
     socket.on("game:error", onGameError);
     if (socket.connected) {
@@ -235,21 +313,31 @@ export function GameScreen({
       socket.off("disconnect", onDisconnect);
       socket.off("connect_error", onDisconnect);
       socket.off("game:state", onState);
+      socket.off("game:vote", onVote);
+      socket.off("game:seat", onSeat);
       socket.off("game:over", onOver);
       socket.off("game:error", onGameError);
     };
-  }, [online, matchId]);
+  }, [online, matchId, recoverMissingMatch, t]);
 
   useEffect(() => {
     if (online && seatIndex !== null) setSelectedPlayerIndex(seatIndex);
   }, [online, seatIndex]);
 
+  useEffect(() => {
+    if (vote?.status !== "open") return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [vote?.id, vote?.status]);
+
   const completeFinish = useCallback(async () => {
+    if (online) throw new Error(i18n.t("matchEnded", { ns: "game" }));
     await flush();
     const result = await finishMatch(matchId);
     if (result.verified) clearLastMatchId();
     return result;
-  }, [flush, matchId]);
+  }, [flush, matchId, online]);
 
   useEffect(() => {
     if (online || !state?.gameOver || !state?.scores) return;
@@ -305,6 +393,10 @@ export function GameScreen({
   function onAct(action: Parameters<typeof dispatchAction>[1]) {
     if (online) {
       const current = stateRef.current;
+      if (vote?.status === "open") {
+        setError(i18n.t("votePausesGame", { ns: "game" }));
+        return;
+      }
       if (seatIndex === null || !current || getActorIndex(current) !== seatIndex) {
         setError(i18n.t("notYourTurn"));
         return;
@@ -320,8 +412,11 @@ export function GameScreen({
   }
 
   function onLeave() {
-    setConsent(null);
     setDialog("leave");
+  }
+
+  function onEnd() {
+    setDialog("end");
   }
 
   async function onLeaveKeep() {
@@ -332,19 +427,6 @@ export function GameScreen({
       return;
     }
     onExit();
-  }
-
-  async function onLeaveConsent() {
-    try {
-      const result = await saveMatchConsent(matchId);
-      if (result.complete) {
-        onExit();
-        return;
-      }
-      setConsent({ consented: result.consented, required: result.required });
-    } catch (err) {
-      setError(formatApiError(err, i18n.t("leaveFailed", { ns: "game" })));
-    }
   }
 
   async function onLeaveAbandon() {
@@ -359,6 +441,68 @@ export function GameScreen({
       return;
     }
     onExit();
+  }
+
+  async function onLeaveMatch() {
+    setVoteError(null);
+    try {
+      await leaveMatch(matchId);
+      clearLastMatchId();
+    } catch (err) {
+      setError(formatApiError(err, i18n.t("leaveFailed", { ns: "game" })));
+      return;
+    }
+    onExit();
+  }
+
+  async function onStartEndVote() {
+    setVoteBusy(true);
+    setVoteError(null);
+    try {
+      const next = await startEndVote(matchId);
+      setVote(next);
+      setDialog(null);
+    } catch (err) {
+      setVoteError(formatApiError(err, i18n.t("endVoteFailed", { ns: "game" })));
+    } finally {
+      setVoteBusy(false);
+    }
+  }
+
+  async function onCastVote(choice: VoteChoice) {
+    setVoteBusy(true);
+    setVoteError(null);
+    try {
+      const next = await castEndVote(matchId, choice);
+      setVote(next);
+    } catch (err) {
+      setVoteError(formatApiError(err, i18n.t("endVoteFailed", { ns: "game" })));
+    } finally {
+      setVoteBusy(false);
+    }
+  }
+
+  if (removed) {
+    return (
+      <div className="table">
+        <Dialog
+          title={t("removedTitle", { ns: "game" })}
+          actions={
+            <button type="button" className="text-btn" onClick={onExit}>
+              {t("leave", { ns: "game" })}
+            </button>
+          }
+        >
+          <p>
+            {removed === "idle"
+              ? t("removedIdle", { ns: "game" })
+              : removed === "leave"
+                ? t("removedLeave", { ns: "game" })
+                : t("removedTaken", { ns: "game" })}
+          </p>
+        </Dialog>
+      </div>
+    );
   }
 
   if (onlineOver === "abandoned") {
@@ -378,7 +522,7 @@ export function GameScreen({
     );
   }
 
-  if (!state) {
+  if (!state && !(online && serverScores)) {
     return (
       <div className="setup">
         <div className="setup-sky" aria-hidden="true" />
@@ -395,11 +539,11 @@ export function GameScreen({
     );
   }
 
-  if (state.gameOver && state.scores) {
+  if ((state?.gameOver && state.scores) || (online && serverScores)) {
     return (
       <EndScreen
-        scores={serverScores ?? state.scores}
-        reason={formatEndReason(serverReason ?? state.endReason, t)}
+        scores={serverScores ?? state?.scores ?? []}
+        reason={formatEndReason(serverReason ?? state?.endReason ?? null, t)}
         verified={verified}
         finishing={finishing}
         finishError={finishError}
@@ -420,16 +564,21 @@ export function GameScreen({
     );
   }
 
+  if (!state) return null;
+
   const legal = online ? serverLegal : getLegalActions(state);
   const currentTurnSeat = online ? getActorIndex(state) : turnSeat;
+  const voteOpen = online && vote?.status === "open";
   const humanTurn = online
-    ? seatIndex !== null && currentTurnSeat === seatIndex && !state.gameOver
+    ? seatIndex !== null && currentTurnSeat === seatIndex && !state.gameOver && !voteOpen
     : awaitingHuman && !busy;
   const youIndex = online
     ? (seatIndex ?? 0)
     : Math.max(0, state.players.findIndex((p) => p.isHuman));
   const selectedPlayer = state.players[selectedPlayerIndex] ?? state.players[youIndex]!;
   const selectedIsYou = selectedPlayerIndex === youIndex;
+  const myBallot = online ? vote?.ballots.find((ballot) => ballot.seatIndex === seatIndex) : undefined;
+  const voteSeconds = vote ? Math.max(0, Math.ceil((new Date(vote.deadlineAt).getTime() - now) / 1000)) : 0;
 
   return (
     <div className="table">
@@ -462,6 +611,11 @@ export function GameScreen({
           >
             {t("shipLog", { ns: "game" })}
           </button>
+          {online && !state.gameOver && (
+            <button type="button" className="text-btn" onClick={onEnd}>
+              {t("endMatch", { ns: "game" })}
+            </button>
+          )}
           <button type="button" className="text-btn" onClick={onLeave}>
             {t("leave", { ns: "game" })}
           </button>
@@ -486,7 +640,118 @@ export function GameScreen({
         {syncError && <p className="error">{syncError}</p>}
         {error && <p className="error">{error}</p>}
       </aside>
-      {dialog === "leave" && (
+      {online && vote?.status === "open" && (
+        <Dialog
+          title={t("voteTitle", { ns: "game" })}
+          actions={
+            <>
+              <button
+                type="button"
+                className="text-btn"
+                disabled={voteBusy}
+                onClick={() => void onCastVote("approve")}
+              >
+                {t("voteApprove", { ns: "game" })}
+              </button>
+              <button
+                type="button"
+                className="text-btn"
+                disabled={voteBusy}
+                onClick={() => void onCastVote("oppose")}
+              >
+                {t("voteOppose", { ns: "game" })}
+              </button>
+            </>
+          }
+        >
+          <p>{t("voteBody", { ns: "game" })}</p>
+          <p>
+            {t("voteTallies", {
+              ns: "game",
+              approve: vote.approve,
+              oppose: vote.oppose,
+              waiting: Math.max(0, vote.eligibleSeats.length - vote.ballots.length),
+            })}
+          </p>
+          <p>{t("voteCountdown", { ns: "game", seconds: voteSeconds })}</p>
+          {myBallot && (
+            <p>
+              {t("voteYourChoice", {
+                ns: "game",
+                choice:
+                  myBallot.choice === "approve"
+                    ? t("voteApprove", { ns: "game" })
+                    : t("voteOppose", { ns: "game" }),
+              })}
+            </p>
+          )}
+          {voteError && <p className="error">{voteError}</p>}
+        </Dialog>
+      )}
+
+      {online && vote?.status === "failed" && (
+        <Dialog
+          title={t("endVoteFailedTitle", { ns: "game" })}
+          actions={
+            <>
+              {myBallot?.choice === "oppose" && (
+                <button type="button" className="text-btn" onClick={() => void onLeaveMatch()}>
+                  {t("leaveMatch", { ns: "game" })}
+                </button>
+              )}
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => {
+                  setVote(null);
+                  setVoteError(null);
+                }}
+              >
+                {t("endVoteContinue", { ns: "game" })}
+              </button>
+            </>
+          }
+        >
+          <p>{t("endVoteFailed", { ns: "game" })}</p>
+          {myBallot?.choice === "oppose" && <p>{t("endVoteOpposerChoice", { ns: "game" })}</p>}
+          {voteError && <p className="error">{voteError}</p>}
+        </Dialog>
+      )}
+
+      {seatNotice && (
+        <Dialog
+          title={t("seatReplacedTitle", { ns: "game" })}
+          actions={
+            <button type="button" className="text-btn" onClick={() => setSeatNotice(null)}>
+              {t("close", { ns: "game" })}
+            </button>
+          }
+        >
+          <p>{seatNotice}</p>
+        </Dialog>
+      )}
+
+      {dialog === "leave" && online && (
+        <Dialog
+          title={t("leaveMatchTitle", { ns: "game" })}
+          showClose
+          onClose={() => setDialog(null)}
+          actions={
+            <>
+              <button type="button" className="text-btn" onClick={() => setDialog(null)}>
+                {t("cancel", { ns: "game" })}
+              </button>
+              <button type="button" className="text-btn" onClick={() => void onLeaveMatch()}>
+                {t("leaveMatch", { ns: "game" })}
+              </button>
+            </>
+          }
+        >
+          <p>{t("leaveMatchBody", { ns: "game" })}</p>
+        </Dialog>
+      )}
+
+      {dialog === "leave" && !online && (
         <Dialog
           title={t("leaveTitle", { ns: "game" })}
           showClose
@@ -496,35 +761,39 @@ export function GameScreen({
               <button type="button" className="text-btn" onClick={() => void onLeaveAbandon()}>
                 {t("no", { ns: "game" })}
               </button>
-              {online ? (
-                consent ? (
-                  <button type="button" className="text-btn" onClick={onExit}>
-                    {t("leave", { ns: "game" })}
-                  </button>
-                ) : (
-                  <button type="button" className="text-btn" onClick={() => void onLeaveConsent()}>
-                    {t("yes", { ns: "game" })}
-                  </button>
-                )
-              ) : (
-                <button type="button" className="text-btn" onClick={() => void onLeaveKeep()}>
-                  {t("yes", { ns: "game" })}
-                </button>
-              )}
+              <button type="button" className="text-btn" onClick={() => void onLeaveKeep()}>
+                {t("yes", { ns: "game" })}
+              </button>
             </>
           }
         >
-          <p>
-            {online
-              ? consent
-                ? t("saveConsentProgress", {
-                    ns: "game",
-                    consented: consent.consented,
-                    required: consent.required,
-                  })
-                : t("leaveBodyOnline", { ns: "game" })
-              : t("leaveBody", { ns: "game" })}
-          </p>
+          <p>{t("leaveBody", { ns: "game" })}</p>
+        </Dialog>
+      )}
+
+      {dialog === "end" && online && (
+        <Dialog
+          title={t("endVoteTitle", { ns: "game" })}
+          showClose
+          onClose={() => setDialog(null)}
+          actions={
+            <>
+              <button type="button" className="text-btn" onClick={() => setDialog(null)}>
+                {t("cancel", { ns: "game" })}
+              </button>
+              <button
+                type="button"
+                className="text-btn"
+                disabled={voteBusy}
+                onClick={() => void onStartEndVote()}
+              >
+                {t("startEndVote", { ns: "game" })}
+              </button>
+            </>
+          }
+        >
+          <p>{t("endVoteBody", { ns: "game" })}</p>
+          {voteError && <p className="error">{voteError}</p>}
         </Dialog>
       )}
 
@@ -584,6 +853,18 @@ export function GameScreen({
       </main>
     </div>
   );
+}
+
+function scoresFromMatchSummary(match: MatchSummary): ScoreBreakdown[] | null {
+  const scores = match.participants
+    .filter((participant) => participant.scores !== null)
+    .map((participant) => ({
+      playerId: `p${participant.seatIndex}`,
+      name: participant.nickname,
+      ...participant.scores!,
+    }));
+  if (scores.length === 0) return null;
+  return scores.sort((a, b) => b.total - a.total);
 }
 
 function receivedForPlayer(state: GameState, playerIndex: number): number | undefined {

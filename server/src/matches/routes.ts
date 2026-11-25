@@ -8,8 +8,15 @@ import { nicknameSchema } from "../validation";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
 import { requireIdentity, requireUser } from "../identity";
-import { broadcastMatchAbandoned } from "../live/gameServer";
-import { dropLiveMatch, getLiveState, withMatchLock } from "../live/liveMatches";
+import { getLiveState } from "../live/liveMatches";
+import {
+  castEndVote,
+  ensureRuntime,
+  getLatestVoteView,
+  getOpenVoteView,
+  leaveOnlineMatch,
+  startEndVote,
+} from "../live/matchRuntime";
 import { redactSavedStateForClient, redactStateForClient } from "../live/redact";
 import { canAccessMatch } from "./access";
 import { finishMatch } from "./finish";
@@ -79,6 +86,8 @@ function matchSummary(match: {
     guestId: string | null;
     isHuman: boolean;
     isAi: boolean;
+    replacedByAiAt: Date | null;
+    replacedFromUserId: string | null;
     vpChips: number | null;
     buildingVp: number | null;
     guildHall: number | null;
@@ -116,6 +125,8 @@ function matchSummary(match: {
       guestId: p.guestId,
       isHuman: p.isHuman,
       isAi: p.isAi,
+      replacedByAiAt: p.replacedByAiAt?.toISOString() ?? null,
+      replacedFromUserId: p.replacedFromUserId,
       scores:
         p.total === null
           ? null
@@ -185,10 +196,42 @@ matchesRouter.post("/", async (req, res) => {
   res.status(201).json({ ...matchSummary(match), playToken: match.playToken });
 });
 
+matchesRouter.get("/:id/seat", async (req, res) => {
+  const { userId } = requireUser(req);
+  const id = matchIdParam(req);
+  const match = await prisma.match.findUnique({
+    where: { id },
+    include: { participants: { orderBy: { seatIndex: "asc" } } },
+  });
+  if (!match || match.mode !== "online") {
+    throw new HttpError(404, "找不到對局", "MATCH_NOT_FOUND");
+  }
+  const current = match.participants.find((participant) => participant.userId === userId);
+  const replaced = match.participants.find((participant) => participant.replacedFromUserId === userId);
+  const seat = current ?? replaced;
+  if (!seat) {
+    throw new HttpError(404, "你不在這個對局中", "MATCH_SEAT_NOT_FOUND");
+  }
+  res.json({
+    status: current ? "seated" : "replaced",
+    matchId: match.id,
+    matchStatus: match.status,
+    seat: {
+      seatIndex: seat.seatIndex,
+      nickname: seat.nickname,
+      isHuman: seat.isHuman,
+      isAi: seat.isAi,
+      replacedByAiAt: seat.replacedByAiAt?.toISOString() ?? null,
+      replacedFromUserId: seat.replacedFromUserId,
+    },
+  });
+});
+
 matchesRouter.get("/:id", async (req, res) => {
   const identity = requireIdentity(req);
   const id = matchIdParam(req);
   const match = await loadOwnedMatch(id, identity);
+  if (match.mode === "online") requireUser(req);
   res.json(matchSummary(match));
 });
 
@@ -206,16 +249,19 @@ matchesRouter.get("/:id/state", async (req, res) => {
   }
 
   if (match.mode === "online") {
-    const seat =
-      match.participants.find((p) => identity.userId && p.userId === identity.userId) ??
-      match.participants.find((p) => identity.guestId && p.guestId === identity.guestId);
+    const { userId } = requireUser(req);
+    const seat = match.participants.find(
+      (participant) => participant.userId === userId && participant.isHuman && !participant.isAi,
+    );
     if (!seat) throw new HttpError(403, "無權存取此對局", "MATCH_FORBIDDEN");
-    const live = await getLiveState(match.id);
+    await ensureRuntime(match.id);
+    const [live, vote] = await Promise.all([getLiveState(match.id), getOpenVoteView(match.id)]);
     res.json({
       ...matchSummary(match),
       state: redactStateForClient(live.state),
       legalActions: getLegalActions(live.state),
       seatIndex: seat.seatIndex,
+      vote,
     });
     return;
   }
@@ -386,8 +432,10 @@ matchesRouter.post("/:id/events", async (req, res) => {
 matchesRouter.post("/:id/finish", async (req, res) => {
   const identity = requireIdentity(req);
   const match = await loadOwnedMatch(matchIdParam(req), identity);
+  if (match.mode === "online") {
+    throw new HttpError(409, "線上對局由伺服器結束", "MATCH_SERVER_AUTHORITATIVE");
+  }
   const finished = await finishMatch(match.id);
-  dropLiveMatch(match.id);
   const updated = await loadOwnedMatch(match.id, identity);
   res.json({
     ...matchSummary(updated),
@@ -399,105 +447,47 @@ matchesRouter.post("/:id/finish", async (req, res) => {
 matchesRouter.post("/:id/abandon", async (req, res) => {
   const identity = requireIdentity(req);
   const match = await loadOwnedMatch(matchIdParam(req), identity);
+  if (match.mode === "online") {
+    throw new HttpError(409, "線上對局請使用離開對局", "MATCH_ONLINE_USE_LEAVE");
+  }
   if (match.status === "finished") {
     throw new HttpError(409, "對局已結束", "MATCH_ALREADY_ENDED");
   }
   if (match.status === "playing") {
-    await withMatchLock(match.id, async () => {
-      await prisma.match.update({
-        where: { id: match.id },
-        data: { status: "abandoned", endedAt: new Date(), verified: false },
-      });
-      dropLiveMatch(match.id);
+    await prisma.match.updateMany({
+      where: { id: match.id, status: "playing" },
+      data: { status: "abandoned", endedAt: new Date(), verified: false },
     });
-    broadcastMatchAbandoned(match.id);
   }
   replayCache.drop(match.id);
   const updated = await loadOwnedMatch(match.id, identity);
   res.json(matchSummary(updated));
 });
 
-matchesRouter.post("/:id/save-consent", async (req, res) => {
+matchesRouter.post("/:id/end-vote", async (req, res) => {
+  const { userId } = requireUser(req);
+  const vote = await startEndVote(matchIdParam(req), { userId });
+  res.status(201).json(vote);
+});
+
+matchesRouter.post("/:id/end-vote/vote", async (req, res) => {
+  const { userId } = requireUser(req);
+  const body = z.object({ choice: z.enum(["approve", "oppose"]) }).parse(req.body);
+  const vote = await castEndVote(matchIdParam(req), { userId }, body.choice);
+  res.json(vote);
+});
+
+matchesRouter.get("/:id/end-vote", async (req, res) => {
   const identity = requireIdentity(req);
   const match = await loadOwnedMatch(matchIdParam(req), identity);
-  const seat = match.participants.find(
-    (p) =>
-      p.isHuman &&
-      ((identity.userId && p.userId === identity.userId) || (identity.guestId && p.guestId === identity.guestId)),
-  );
-  if (!seat) {
-    throw new HttpError(403, "只有該局玩家才能同意存檔", "SAVE_CONSENT_FORBIDDEN");
-  }
+  if (match.mode === "online") requireUser(req);
+  res.json({ vote: await getLatestVoteView(match.id) });
+});
 
-  await prisma.saveConsent.upsert({
-    where: { matchId_seatIndex: { matchId: match.id, seatIndex: seat.seatIndex } },
-    create: { matchId: match.id, seatIndex: seat.seatIndex, userId: seat.userId, guestId: seat.guestId },
-    update: { userId: seat.userId, guestId: seat.guestId },
-  });
-
-  const humanSeats = match.participants.filter((p) => p.isHuman);
-  const consents = await prisma.saveConsent.findMany({ where: { matchId: match.id } });
-  const consentedSeats = new Set(consents.map((c) => c.seatIndex));
-  const complete = humanSeats.every((p) => consentedSeats.has(p.seatIndex));
-
-  if (complete && match.mode === "online") {
-    if (!isPlayerCount(match.playerCount)) {
-      throw new HttpError(400, "對局人數無效", "INVALID_PLAYER_COUNT");
-    }
-    if (match.difficulty !== "balanced" && match.difficulty !== "aggressive") {
-      throw new HttpError(400, "對局難度無效", "INVALID_DIFFICULTY");
-    }
-    const events = await prisma.matchEvent.findMany({
-      where: { matchId: match.id },
-      orderBy: { seq: "asc" },
-    });
-    if (events.length !== match._count.events) {
-      throw new HttpError(409, "對局紀錄無法重放", "MATCH_REPLAY_FAILED");
-    }
-    const actions = events.map((event, index) => {
-      if (event.seq !== index + 1 || !isAction(event.action)) {
-        throw new HttpError(409, "對局紀錄無法重放", "MATCH_REPLAY_FAILED");
-      }
-      return event.action;
-    });
-    const replayed = replayStoredActions({
-      matchId: match.id,
-      playerCount: match.playerCount,
-      difficulty: match.difficulty,
-      seed: match.seed,
-      humanName: match.humanName,
-      actions,
-      seatNames: replaySeatNames(match),
-    });
-    if (!replayed.ok) {
-      throw new HttpError(409, "對局紀錄無法重放", "MATCH_REPLAY_FAILED");
-    }
-    const stateJson = replayed.state as unknown as Prisma.InputJsonValue;
-    await prisma.matchSave.upsert({
-      where: { matchId: match.id },
-      create: {
-        matchId: match.id,
-        stateJson,
-        schemaVersion: SAVE_SCHEMA_VERSION,
-        savedByUserId: identity.userId ?? null,
-        consentRequired: true,
-      },
-      update: {
-        stateJson,
-        schemaVersion: SAVE_SCHEMA_VERSION,
-        savedByUserId: identity.userId ?? null,
-        consentRequired: true,
-      },
-    });
-  }
-
-  res.json({
-    matchId: match.id,
-    seatIndex: seat.seatIndex,
-    consented: humanSeats.filter((p) => consentedSeats.has(p.seatIndex)).length,
-    required: humanSeats.length,
-    complete,
-  });
+matchesRouter.post("/:id/leave", async (req, res) => {
+  const { userId } = requireUser(req);
+  const result = await leaveOnlineMatch(matchIdParam(req), { userId });
+  res.json({ result });
 });
 
 matchesRouter.put("/:id/save", async (req, res) => {
@@ -505,7 +495,7 @@ matchesRouter.put("/:id/save", async (req, res) => {
   const match = await loadOwnedMatch(matchIdParam(req), identity);
   assertPlaying(match.status);
   if (match.mode === "online") {
-    throw new HttpError(403, "線上對局需全體玩家同意才能存檔", "SAVE_CONSENT_REQUIRED");
+    throw new HttpError(409, "線上對局不支援存檔", "ONLINE_SAVE_UNSUPPORTED");
   }
   const body = z
     .object({
@@ -547,6 +537,9 @@ matchesRouter.put("/:id/save", async (req, res) => {
 matchesRouter.get("/:id/save", async (req, res) => {
   const identity = requireIdentity(req);
   const match = await loadOwnedMatch(matchIdParam(req), identity);
+  if (match.mode === "online") {
+    throw new HttpError(409, "線上對局不支援存檔", "ONLINE_SAVE_UNSUPPORTED");
+  }
   if (
     !canReadMatchSave({
       mode: match.mode,
